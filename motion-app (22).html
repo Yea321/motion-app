@@ -1,0 +1,2392 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOTION — מערכת אימונים</title>
+<style>
+  :root{
+    --bg:#0A0B0E;
+    --bg-elevated:#14161C;
+    --bg-card:#181B22;
+    --border:#262A33;
+    --blue:#2F6FED;
+    --blue-bright:#5B93FF;
+    --blue-dim:#132449;
+    --white:#F4F5F7;
+    --muted:#868C99;
+    --green:#33C481;
+    --red:#E5484D;
+    --font-display: 'Segoe UI', Arial, sans-serif;
+    --font-mono: 'Courier New', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--white);font-family:var(--font-display);}
+  body{min-height:100vh;}
+  #app{min-height:100vh;}
+  .hidden{display:none !important;}
+
+  /* ---------- Logo ---------- */
+  .motion-mark{display:inline-flex;align-items:center;gap:10px;}
+  .motion-mark svg{display:block;}
+  .motion-wordmark{font-weight:800;letter-spacing:2px;font-size:20px;text-transform:uppercase;}
+  .motion-wordmark span{color:var(--blue-bright);}
+
+  /* ---------- Layout shells ---------- */
+  .centerscreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;overflow:hidden;}
+  .centerscreen::before{
+    content:"";position:absolute;inset:0;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(47,111,237,0.16), transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(47,111,237,0.10), transparent 40%);
+    pointer-events:none;
+  }
+  .card{
+    position:relative;background:var(--bg-card);border:1px solid var(--border);
+    border-radius:14px;padding:32px;width:100%;max-width:400px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  }
+  .card h1{font-size:15px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin:0 0 24px 0;font-weight:700;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;}
+  .field input, .field select, .field textarea{
+    width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--white);
+    padding:11px 12px;border-radius:8px;font-size:14px;font-family:inherit;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{outline:none;border-color:var(--blue);}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--blue);color:white;border:none;border-radius:8px;
+    padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.3px;
+    transition:background .15s ease, transform .1s ease;
+  }
+  .btn:hover{background:var(--blue-bright);}
+  .btn:active{transform:scale(0.98);}
+  .btn.full{width:100%;}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--white);}
+  .btn.ghost:hover{border-color:var(--blue);color:var(--blue-bright);}
+  .btn.small{padding:7px 12px;font-size:12px;}
+  .btn.danger{background:var(--red);}
+  .linklike{background:none;border:none;color:var(--blue-bright);cursor:pointer;font-size:13px;padding:0;text-decoration:underline;}
+  .error{color:var(--red);font-size:13px;margin-top:10px;}
+  .muted{color:var(--muted);}
+  .hint{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.6;}
+
+  /* ---------- App shell ---------- */
+  .shell{display:flex;min-height:100vh;}
+  .sidebar{
+    width:230px;flex-shrink:0;background:var(--bg-elevated);border-left:1px solid var(--border);
+    padding:22px 18px;display:flex;flex-direction:column;gap:26px;
+  }
+  .sidebar .who{font-size:13px;color:var(--muted);border-top:1px solid var(--border);padding-top:14px;}
+  .sidebar .who b{color:var(--white);display:block;font-size:14px;margin-bottom:2px;}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+    color:var(--muted);cursor:pointer;font-size:14px;font-weight:600;
+  }
+  .nav-item.active, .nav-item:hover{background:var(--blue-dim);color:var(--blue-bright);}
+  .main{flex:1;padding:32px 40px;max-width:1100px;}
+  .topbar{display:none;}
+
+  @media (max-width:820px){
+    .shell{flex-direction:column;}
+    .sidebar{width:100%;flex-direction:row;align-items:center;justify-content:space-between;padding:14px 18px;border-left:none;border-bottom:1px solid var(--border);}
+    .sidebar .navwrap{display:flex;gap:6px;}
+    .sidebar .who{border-top:none;padding-top:0;display:none;}
+    .main{padding:22px 18px;}
+  }
+
+  h2.page-title{font-size:22px;margin:0 0 4px 0;font-weight:800;}
+  p.page-sub{color:var(--muted);font-size:13px;margin:0 0 26px 0;}
+
+  .grid{display:grid;gap:16px;}
+  .grid.cols-2{grid-template-columns:1fr 1fr;}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr);}
+  @media (max-width:820px){.grid.cols-2,.grid.cols-3{grid-template-columns:1fr;}}
+
+  .panel{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .panel h3{margin:0 0 14px 0;font-size:14px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted);}
+
+  .trainee-row{
+    display:flex;align-items:center;justify-content:space-between;padding:13px 14px;
+    border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--bg-elevated);
+  }
+  .trainee-row:hover{border-color:var(--blue);}
+  .trainee-row .name{font-weight:700;}
+  .trainee-row .meta{font-size:12px;color:var(--muted);font-family:var(--font-mono);}
+  .avatar{
+    width:36px;height:36px;border-radius:50%;background:var(--blue-dim);color:var(--blue-bright);
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;margin-left:10px;
+  }
+  .row-left{display:flex;align-items:center;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:right;color:var(--muted);font-weight:600;padding:8px 6px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;}
+  td{padding:9px 6px;border-bottom:1px solid var(--border);font-family:var(--font-mono);}
+
+  .day-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg-elevated);}
+  .day-row.done{border-color:var(--green);}
+  .day-row.rest{opacity:0.6;}
+  .day-num{font-family:var(--font-mono);font-weight:800;color:var(--blue-bright);min-width:44px;text-align:center;line-height:1.3;}
+  .day-check{width:20px;height:20px;flex-shrink:0;cursor:pointer;accent-color:var(--green);}
+  .day-info{flex:1;}
+  .day-info .t{font-weight:700;font-size:13px;}
+  .day-info .d{font-size:12px;color:var(--muted);}
+  .badge{font-size:10px;padding:2px 8px;border-radius:20px;background:var(--blue-dim);color:var(--blue-bright);font-weight:700;text-transform:uppercase;}
+
+  .stat{display:flex;flex-direction:column;gap:2px;}
+  .stat .v{font-family:var(--font-mono);font-size:24px;font-weight:800;}
+  .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
+  .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:26px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;}
+  .modal h3{margin-top:0;}
+  .modal-actions{display:flex;gap:10px;margin-top:18px;}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--bg-elevated);border:1px solid var(--blue);color:var(--white);padding:12px 20px;border-radius:10px;font-size:13px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,0.5);}
+
+  .empty{text-align:center;padding:40px 20px;color:var(--muted);}
+  .empty svg{opacity:0.5;margin-bottom:12px;}
+
+  .config-note{background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:18px;}
+  .config-note code{background:var(--bg);padding:1px 5px;border-radius:4px;color:var(--blue-bright);}
+
+  /* ---------- v2: motion, streak, goals, photos ---------- */
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  .main > *{animation:fadeUp .32s ease both;}
+  .panel{transition:border-color .15s ease;}
+  .day-row{transition:transform .12s ease, border-color .15s ease;}
+  .day-row:hover{transform:translateX(-2px);}
+
+  .ring-wrap{display:flex;align-items:center;gap:16px;}
+  .ring-wrap svg{transform:rotate(-90deg);}
+  .ring-bg{fill:none;stroke:var(--border);stroke-width:8;}
+  .ring-fg{fill:none;stroke:var(--blue);stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset .5s ease;}
+  .ring-label{font-family:var(--font-mono);font-size:20px;font-weight:800;}
+
+  .streak-badge{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#2F6FED,#5B93FF);color:#fff;padding:6px 14px;border-radius:20px;font-weight:800;font-size:13px;}
+  .reminder-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--blue-dim);border:1px solid var(--blue);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;flex-wrap:wrap;}
+
+  .mini-row{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--muted);font-family:var(--font-mono);}
+  .mini-row b{color:var(--white);}
+
+  .templates-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .template-chip{border:1px solid var(--border);background:var(--bg-elevated);color:var(--muted);padding:8px 14px;border-radius:9px;cursor:pointer;font-size:12px;font-weight:700;text-align:center;}
+  .template-chip:hover{border-color:var(--blue);color:var(--blue-bright);}
+  .template-chip.selected{border-color:var(--blue);color:var(--blue-bright);background:var(--blue-dim);}
+
+  .photo-thumb{width:38px;height:38px;border-radius:8px;object-fit:cover;border:1px solid var(--border);cursor:pointer;}
+  .photo-input-wrap{position:relative;}
+  .photo-preview{width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-top:8px;border:1px solid var(--border);display:none;}
+  .lightbox-bg{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:60;padding:24px;cursor:zoom-out;}
+  .lightbox-bg img{max-width:90vw;max-height:90vh;border-radius:12px;}
+
+  .bottom-nav{display:none;}
+  @media (max-width:820px){
+    .sidebar .navwrap{display:none;}
+    .bottom-nav{
+      display:flex;position:fixed;bottom:0;right:0;left:0;background:var(--bg-elevated);
+      border-top:1px solid var(--border);z-index:40;padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    }
+    .bottom-nav .nav-item{flex:1;flex-direction:column;gap:2px;text-align:center;font-size:11px;padding:6px 4px;}
+    .main{padding-bottom:78px;}
+  }
+
+  /* ---------- v3: exercise builder ---------- */
+  .exercise-builder-row{display:grid;grid-template-columns:2fr 0.7fr 0.9fr 0.9fr auto;gap:8px;margin-bottom:8px;align-items:center;}
+  .exercise-builder-row input{padding:9px 10px;font-size:13px;}
+  @media (max-width:600px){.exercise-builder-row{grid-template-columns:1fr 1fr;}}
+  .icon-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;width:36px;height:36px;cursor:pointer;font-size:16px;flex-shrink:0;}
+  .icon-btn:hover{border-color:var(--red);color:var(--red);}
+  .add-exercise-link{color:var(--blue-bright);background:none;border:1px dashed var(--border);width:100%;padding:9px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;}
+  .add-exercise-link:hover{border-color:var(--blue);}
+
+  .day-card{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--bg-elevated);overflow:hidden;}
+  .day-card.done{border-color:var(--green);}
+  .day-card.rest{opacity:0.6;}
+  .day-card-head{display:flex;align-items:center;gap:12px;padding:10px;cursor:pointer;}
+  .day-card-body{padding:0 14px 14px 14px;border-top:1px solid var(--border);display:none;}
+  .day-card.expanded .day-card-body{display:block;}
+  .day-card-body .empty{padding:16px;}
+  .chevron{transition:transform .2s ease;color:var(--muted);margin-right:4px;}
+  .day-card.expanded .chevron{transform:rotate(180deg);}
+
+  .exercise-item{border:1px solid var(--border);border-radius:9px;padding:11px;margin-top:10px;background:var(--bg-card);}
+  .exercise-item .ex-name{font-weight:700;font-size:13px;margin-bottom:2px;}
+  .exercise-item .ex-target{font-size:11.5px;color:var(--muted);font-family:var(--font-mono);margin-bottom:8px;}
+  .ex-log-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:end;}
+  .ex-log-grid .f{display:flex;flex-direction:column;gap:3px;}
+  .ex-log-grid label{font-size:10px;color:var(--muted);}
+  .ex-log-grid input{padding:7px 8px;font-size:12px;}
+  .ex-log-grid .btn{padding:8px 10px;font-size:12px;}
+  .exercise-item.ex-done{border-color:var(--green);}
+
+  /* ---------- v4: nutrition ---------- */
+  .macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  @media (max-width:600px){.macro-grid{grid-template-columns:repeat(2,1fr);}}
+  .macro-box{background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;}
+  .macro-box .v{font-family:var(--font-mono);font-weight:800;font-size:19px;}
+  .macro-box .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-top:2px;}
+  .meal-card{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--bg-elevated);}
+  .meal-card .meal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .meal-card .meal-name{font-weight:800;font-size:14px;}
+  .meal-card .meal-macros{font-size:11px;color:var(--blue-bright);font-family:var(--font-mono);}
+  .meal-card .meal-desc{font-size:13px;color:var(--muted);line-height:1.6;white-space:pre-wrap;}
+
+  /* ---------- v5: exercise videos ---------- */
+  .video-input-row{margin-top:6px;}
+  .video-input-row input{width:100%;padding:8px 10px;font-size:12px;}
+  .video-link-btn{display:inline-flex;align-items:center;gap:6px;background:var(--blue-dim);color:var(--blue-bright);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-top:6px;}
+  .video-link-btn:hover{background:var(--blue);color:#fff;}
+  .video-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:70;padding:20px;cursor:zoom-out;}
+  .video-modal-inner{width:100%;max-width:800px;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;cursor:default;}
+  .video-modal-inner iframe, .video-modal-inner video{width:100%;height:100%;border:none;}
+  .video-modal-fallback{background:var(--bg-card);border-radius:12px;padding:30px;text-align:center;cursor:default;}
+
+  /* ---------- v6: board, library, templates ---------- */
+  .board-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;}
+  @media (max-width:600px){.board-grid{grid-template-columns:repeat(7,1fr);}}
+  .board-cell{aspect-ratio:1;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-family:var(--font-mono);font-weight:700;cursor:pointer;border:1px solid var(--border);color:var(--muted);background:var(--bg-elevated);}
+  .board-cell.done{background:var(--green);border-color:var(--green);color:#04170f;}
+  .board-cell.rest{background:transparent;border-style:dashed;opacity:0.5;}
+  .board-cell.missed{background:rgba(229,72,77,0.18);border-color:var(--red);color:var(--red);}
+  .board-cell.today{outline:2px solid var(--blue-bright);}
+  .board-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--muted);}
+  .board-legend span{display:inline-flex;align-items:center;gap:5px;}
+  .legend-dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
+
+  .lib-search{width:100%;padding:10px 12px;margin-bottom:10px;}
+  .lib-list{max-height:340px;overflow-y:auto;}
+  .lib-item{border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:6px;cursor:pointer;}
+  .lib-item:hover{border-color:var(--blue);}
+  .lib-item .lib-name{font-weight:700;font-size:13px;}
+  .lib-item .lib-cat{font-size:11px;color:var(--blue-bright);}
+  .lib-item .lib-instr{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5;}
+  .info-dot{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--blue-dim);color:var(--blue-bright);font-size:11px;font-weight:800;cursor:pointer;margin-right:6px;}
+
+  .tpl-row{display:flex;gap:8px;margin-bottom:12px;}
+  .tpl-row select{flex:1;}
+  .day-actions-row{display:flex;gap:6px;flex-wrap:wrap;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================
+   MOTION — קליינט Supabase מינימלי (fetch ישיר ל-REST + Auth, ללא ספרייה)
+   ===================================================================== */
+
+let CONFIG = { url: 'https://gtgckiyvzqgtrfixddfg.supabase.co', anonKey: 'sb_publishable_Tv1FjYc34OXcIcZHVUDbMA_NNhEzzZs' };
+let SESSION = null;    // { access_token, refresh_token, user:{id,email} }
+let PROFILE = null;    // row from profiles table
+let STATE = { view: 'config', activeTraineeId: null, traineeCache:{} };
+
+/* --- שמירה מקומית: כדי שהאפליקציה תזכור התחברות בין פתיחות. --- */
+function saveLocal(){
+  try{
+    localStorage.setItem('motion_config', JSON.stringify(CONFIG));
+    if(SESSION) localStorage.setItem('motion_session', JSON.stringify(SESSION));
+    else localStorage.removeItem('motion_session');
+  }catch(e){ /* אחסון לא זמין - נמשיך בלי שמירה */ }
+}
+function clearLocal(){
+  try{ localStorage.removeItem('motion_session'); }catch(e){}
+}
+async function tryRestoreSession(){
+  try{
+    const sessRaw = localStorage.getItem('motion_session');
+    if(!sessRaw) return false;
+    SESSION = JSON.parse(sessRaw);
+    const rows = await rest('profiles', { query:`?id=eq.${SESSION.user.id}&select=*` });
+    if(!rows || !rows.length) throw new Error('no profile');
+    PROFILE = rows[0];
+    STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
+    return true;
+  }catch(e){
+    SESSION = null; PROFILE = null;
+    clearLocal();
+    return false;
+  }
+}
+
+function showToast(msg, isError){
+  const el = document.createElement('div');
+  el.className = 'toast';
+  if(isError) el.style.borderColor = 'var(--red)';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+async function authRequest(path, body){
+  const res = await fetch(`${CONFIG.url}/auth/v1/${path}`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'apikey': CONFIG.anonKey },
+    body: JSON.stringify(body)
+  });
+  const rawText = await res.text();
+  let data = {};
+  try{ data = JSON.parse(rawText); }catch(e){ data = {}; }
+  if(!res.ok){
+    const detail = data.error_description || data.msg || data.error || data.message || data.error_code || rawText || (res.status + ' ' + res.statusText);
+    throw new Error(`(${res.status}) ${detail}`);
+  }
+  return data;
+}
+
+async function rest(table, { method='GET', query='', body=null, token=null, prefer=null } = {}){
+  const headers = { 'Content-Type':'application/json', 'apikey': CONFIG.anonKey };
+  headers['Authorization'] = 'Bearer ' + (token || (SESSION && SESSION.access_token) || CONFIG.anonKey);
+  if(prefer) headers['Prefer'] = prefer;
+  const res = await fetch(`${CONFIG.url}/rest/v1/${table}${query}`, {
+    method, headers, body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const errText = await res.text().catch(()=> '');
+    throw new Error(`שגיאת שרת (${table}): ${errText || res.status}`);
+  }
+  if(res.status === 204) return null;
+  return res.json().catch(()=>null);
+}
+
+let EXERCISE_LIBRARY = null; // cache
+async function getExerciseLibrary(forceRefresh){
+  if(EXERCISE_LIBRARY && !forceRefresh) return EXERCISE_LIBRARY;
+  try{
+    EXERCISE_LIBRARY = await rest('exercise_library', { query:`?select=*&order=category.asc,name.asc` }) || [];
+  }catch(e){ EXERCISE_LIBRARY = []; }
+  return EXERCISE_LIBRARY;
+}
+function findLibraryInstructions(name){
+  if(!EXERCISE_LIBRARY) return null;
+  const norm = s => (s||'').trim().toLowerCase();
+  const hit = EXERCISE_LIBRARY.find(l => norm(l.name) === norm(name));
+  return hit ? hit.instructions : null;
+}
+
+async function openLibraryPicker(onPick){
+  const lib = await getExerciseLibrary();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>בחירה מספריית תרגילים</h3>
+      <input class="lib-search" id="libSearch" placeholder="חיפוש לפי שם או קבוצת שרירים...">
+      <div class="lib-list" id="libList"></div>
+      <button type="button" class="add-exercise-link" id="libAddNewBtn" style="margin-top:10px;">+ תרגיל לא נמצא? הוסיפי אותו לספרייה</button>
+      <div id="libAddForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--border);padding-top:12px;">
+        <div class="field"><label>שם התרגיל</label><input id="libNewName"></div>
+        <div class="field"><label>קבוצת שרירים (אופציונלי)</label><input id="libNewCat" placeholder="לדוגמה: חזה, גב, רגליים..."></div>
+        <div class="field"><label>הוראות ביצוע (אופציונלי)</label><textarea id="libNewInstr" rows="3"></textarea></div>
+        <div id="libAddErr" class="error hidden"></div>
+        <button class="btn full" id="libAddSave">שמירה לספרייה</button>
+      </div>
+      <div class="modal-actions"><button class="btn ghost full" id="libClose">סגירה</button></div>
+    </div>`;
+  document.body.appendChild(bg);
+  function renderList(filter){
+    const f = (filter||'').trim().toLowerCase();
+    const filtered = !f ? lib : lib.filter(l => (l.name||'').toLowerCase().includes(f) || (l.category||'').toLowerCase().includes(f));
+    document.getElementById('libList').innerHTML = filtered.length ? filtered.map(l => `
+      <div class="lib-item" data-pick="${l.id}">
+        <div class="lib-name">${l.name}</div>
+        ${l.category ? `<div class="lib-cat">${l.category}</div>` : ''}
+        ${l.instructions ? `<div class="lib-instr">${l.instructions}</div>` : ''}
+      </div>`).join('') : `<div class="empty" style="padding:20px;">${lib.length ? 'אין תוצאות' : 'הספרייה ריקה - הריצי את motion-supabase-schema-v6-addon.sql'}</div>`;
+    document.querySelectorAll('[data-pick]').forEach(el => {
+      el.onclick = () => {
+        const item = lib.find(l => l.id === el.getAttribute('data-pick'));
+        bg.remove();
+        onPick(item);
+      };
+    });
+  }
+  renderList('');
+  document.getElementById('libSearch').oninput = (ev) => renderList(ev.target.value);
+  document.getElementById('libClose').onclick = () => bg.remove();
+  document.getElementById('libAddNewBtn').onclick = () => {
+    document.getElementById('libAddForm').classList.remove('hidden');
+    document.getElementById('libAddNewBtn').classList.add('hidden');
+    document.getElementById('libNewName').value = document.getElementById('libSearch').value;
+  };
+  document.getElementById('libAddSave').onclick = async () => {
+    const name = document.getElementById('libNewName').value.trim();
+    const errEl = document.getElementById('libAddErr');
+    if(!name){ errEl.textContent = 'נא להזין שם תרגיל.'; errEl.classList.remove('hidden'); return; }
+    try{
+      const created = await rest('exercise_library', { method:'POST', body:{
+        name,
+        category: document.getElementById('libNewCat').value.trim() || null,
+        instructions: document.getElementById('libNewInstr').value.trim() || null
+      }, prefer:'return=representation' });
+      const newItem = created && created[0];
+      await getExerciseLibrary(true);
+      showToast(`"${name}" נוסף לספרייה`);
+      bg.remove();
+      if(newItem) onPick(newItem);
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+let DAY_TEMPLATES = null;
+async function getDayTemplates(forceRefresh){
+  if(DAY_TEMPLATES && !forceRefresh) return DAY_TEMPLATES;
+  try{
+    DAY_TEMPLATES = await rest('day_templates', { query:`?coach_id=eq.${PROFILE.id}&select=*&order=name.asc` }) || [];
+  }catch(e){ DAY_TEMPLATES = []; }
+  return DAY_TEMPLATES;
+}
+
+function saveDayAsTemplate(title, description, exerciseRows){
+  const validRows = exerciseRows.filter(r => r.name && r.name.trim());
+  if(!validRows.length){
+    showToast('אין תרגילים לשמור - הוסיפי לפחות תרגיל אחד קודם', true);
+    return;
+  }
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>שמירת תבנית אימון</h3>
+      <div class="field"><label>שם לתבנית (לדוגמה: "יום רגליים כבד")</label><input id="tplNameInput" placeholder="שם התבנית"></div>
+      <p class="muted" style="font-size:12px;">ישמור ${validRows.length} תרגילים תחת השם הזה, לשימוש חוזר בכל תוכנית.</p>
+      <div id="tplSaveErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="tplSaveCancel">ביטול</button>
+        <button class="btn full" id="tplSaveConfirm">שמירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  const input = document.getElementById('tplNameInput');
+  input.focus();
+  document.getElementById('tplSaveCancel').onclick = () => bg.remove();
+  document.getElementById('tplSaveConfirm').onclick = async () => {
+    const name = input.value.trim();
+    const errEl = document.getElementById('tplSaveErr');
+    if(!name){ errEl.textContent = 'נא להזין שם לתבנית.'; errEl.classList.remove('hidden'); return; }
+    try{
+      await rest('day_templates', { method:'POST', body:{
+        coach_id: PROFILE.id, name, title: title || '', description: description || '',
+        exercises: validRows.map(r => ({
+          name: r.name.trim(),
+          target_sets: r.sets ? parseInt(r.sets) : null,
+          target_reps: r.reps ? String(r.reps).trim() : null,
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+        }))
+      }});
+      await getDayTemplates(true);
+      bg.remove();
+      showToast(`התבנית "${name}" נשמרה`);
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+function templatePickerHtml(templates){
+  if(!templates.length) return '';
+  return `
+    <div class="field">
+      <label>טעינת תבנית אימון שמורה (אופציונלי)</label>
+      <div class="tpl-row">
+        <select id="tplSelect"><option value="">— בחרי תבנית —</option>${templates.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}</select>
+        <button type="button" class="btn ghost small" id="tplApply">טעינה</button>
+      </div>
+    </div>`;
+}
+
+async function uploadPhoto(file, userId){
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+  const path = `${userId}/${Date.now()}.${ext}`;
+  const res = await fetch(`${CONFIG.url}/storage/v1/object/motion-photos/${path}`, {
+    method:'POST',
+    headers:{
+      'apikey': CONFIG.anonKey,
+      'Authorization': 'Bearer ' + (SESSION && SESSION.access_token || CONFIG.anonKey),
+      'Content-Type': file.type || 'image/jpeg'
+    },
+    body: file
+  });
+  if(!res.ok){
+    const t = await res.text().catch(()=> '');
+    throw new Error('העלאת התמונה נכשלה: ' + (t || res.status) + ' (ודאי שהרצת את motion-supabase-schema-v2-addon.sql)');
+  }
+  return `${CONFIG.url}/storage/v1/object/public/motion-photos/${path}`;
+}
+
+function exportCSV(filename, headers, rows){
+  const escape = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const csv = '\uFEFF' + [headers.map(escape).join(',')].concat(
+    rows.map(r => r.map(escape).join(','))
+  ).join('\r\n');
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+function calcStreak(days){
+  // רצף ימי אימון: סופרת אחורה מהיום המספרי הגבוה ביותר שסומן/חלף, ימי מנוחה לא שוברים רצף
+  const sorted = days.slice().sort((a,b)=>b.day_number-a.day_number);
+  let streak = 0;
+  for(const d of sorted){
+    if(d.is_rest_day) continue;
+    if(d.completed) streak++;
+    else break;
+  }
+  return streak;
+}
+
+function openExerciseHistoryModal(exerciseName, allDays, startDate){
+  const norm = s => (s||'').trim().toLowerCase();
+  const rows = [];
+  allDays.forEach(d => {
+    (d.exercises || []).forEach(ex => {
+      if(norm(ex.name) === norm(exerciseName) && (ex.actual_weight_kg!=null || ex.actual_reps!=null)){
+        rows.push({ day_number: d.day_number, weight: ex.actual_weight_kg, reps: ex.actual_reps, sets: ex.actual_sets });
+      }
+    });
+  });
+  rows.sort((a,b)=>a.day_number-b.day_number);
+  const chartPoints = rows.filter(r=>r.weight!=null).map((r,i)=>({x:i,y:parseFloat(r.weight)}));
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>היסטוריית התקדמות — ${exerciseName}</h3>
+      ${rows.length ? `
+        <div style="margin-bottom:14px;">${svgLineChart(chartPoints, 380, 130)}</div>
+        <table>
+          <tr><th>תאריך</th><th>ק"ג</th><th>חזרות</th><th>סטים</th></tr>
+          ${rows.slice().reverse().map(r => `<tr><td>${startDate ? dayLabel(startDate, r.day_number).fullDate : 'D'+r.day_number}</td><td>${r.weight ?? '-'}</td><td>${r.reps ?? '-'}</td><td>${r.sets ?? '-'}</td></tr>`).join('')}
+        </table>
+      ` : `<div class="empty">עדיין אין נתונים שמורים לתרגיל הזה</div>`}
+      <div class="modal-actions">
+        <button class="btn full" id="ehClose">סגירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('ehClose').onclick = () => bg.remove();
+  bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+}
+
+const HEBREW_WEEKDAYS = ['יום א׳','יום ב׳','יום ג׳','יום ד׳','יום ה׳','יום ו׳','שבת'];
+const MOTIVATION_MESSAGES = [
+  'כל הכבוד! עוד יום קרוב יותר ליעד 💪',
+  'מעולה! את בדרך הנכונה 🔥',
+  'יפה מאוד! ההתמדה משתלמת',
+  'כל אימון סופר - כל הכבוד שהתמדת',
+  'איזה כוח! תמשיכי ככה',
+  'עוד צעד קדימה - את/ה מדהים/ה'
+];
+function randomMotivation(){
+  return MOTIVATION_MESSAGES[Math.floor(Math.random()*MOTIVATION_MESSAGES.length)];
+}
+function dayDate(startDateStr, dayNumber){
+  const d = new Date(startDateStr);
+  d.setDate(d.getDate() + (dayNumber - 1));
+  return d;
+}
+function dayLabel(startDateStr, dayNumber){
+  const d = dayDate(startDateStr, dayNumber);
+  return { weekday: HEBREW_WEEKDAYS[d.getDay()], dateStr: d.toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'}), fullDate: d.toLocaleDateString('he-IL'), dateObj: d };
+}
+
+function progressRing(pct, size){
+  size = size || 64;
+  const r = (size/2) - 8;
+  const c = 2*Math.PI*r;
+  const offset = c - (Math.max(0,Math.min(100,pct))/100)*c;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle class="ring-bg" cx="${size/2}" cy="${size/2}" r="${r}"/>
+    <circle class="ring-fg" cx="${size/2}" cy="${size/2}" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${offset}"/>
+  </svg>`;
+}
+function logoSVG(size){
+  size = size || 34;
+  return `
+  <svg width="${size}" height="${size}" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="mgrad" x1="4" y1="44" x2="44" y2="4" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#1D4FC4"/>
+        <stop offset="1" stop-color="#8FB3FF"/>
+      </linearGradient>
+    </defs>
+    <rect width="48" height="48" rx="12" fill="#0A0B0E"/>
+    <path d="M13 12 L24 24 L13 36" stroke="url(#mgrad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55"/>
+    <path d="M21 10 L34 24 L21 38" stroke="url(#mgrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.8"/>
+    <path d="M29 8 L44 24 L29 40" stroke="url(#mgrad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </svg>`;
+}
+
+function motionMark(size, withWord){
+  return `<div class="motion-mark">${logoSVG(size)}${withWord ? '<span class="motion-wordmark">MOTION</span>' : ''}</div>`;
+}
+
+/* =====================================================================
+   מסך 1: הגדרת חיבור ל-Supabase (נשמר רק בזיכרון, לא בדפדפן)
+   ===================================================================== */
+function renderConfig(){
+  document.getElementById('app').innerHTML = `
+  <div class="centerscreen">
+    <div class="card">
+      <div style="margin-bottom:22px;">${motionMark(38,true)}</div>
+      <h1>חיבור ל-Supabase</h1>
+      <div class="config-note">
+        הזן את פרטי פרויקט ה-Supabase שלך (מתוך Project Settings → API).
+        הפרטים נשמרים בדפדפן הזה בלבד (לא נשלחים לשום מקום חוץ מהשרת שלך), כך שבפעם הבאה שתפתחי את האפליקציה לא תצטרכי להזין אותם שוב.
+      </div>
+      <div class="field">
+        <label>Project URL</label>
+        <input id="cfgUrl" placeholder="https://xxxxxxxx.supabase.co" value="${CONFIG.url}">
+      </div>
+      <div class="field">
+        <label>Anon Public Key</label>
+        <input id="cfgKey" placeholder="eyJhbGciOi..." value="${CONFIG.anonKey}">
+      </div>
+      <div id="cfgErr" class="error hidden"></div>
+      <button class="btn full" id="cfgSubmit">המשך</button>
+      <div class="hint">
+        טרם הגדרת פרויקט Supabase? עברי ל-supabase.com, צרי פרויקט חדש, והריצי את קובץ ה-SQL שקיבלת (motion-supabase-schema.sql) תחת SQL Editor.
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('cfgSubmit').onclick = () => {
+    const url = document.getElementById('cfgUrl').value.trim().replace(/\/$/,'');
+    const key = document.getElementById('cfgKey').value.trim();
+    const err = document.getElementById('cfgErr');
+    if(!url || !key || !url.startsWith('http')){
+      err.textContent = 'יש להזין כתובת URL תקינה ומפתח anon.';
+      err.classList.remove('hidden');
+      return;
+    }
+    CONFIG = { url, anonKey: key };
+    saveLocal();
+    STATE.view = 'auth';
+    render();
+  };
+}
+
+/* =====================================================================
+   מסך 2: התחברות / הרשמת מאמן
+   ===================================================================== */
+function renderAuth(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+  <div class="centerscreen">
+    <div class="card">
+      <div style="margin-bottom:22px;">${motionMark(38,true)}</div>
+      <h1 id="authTitle">התחברות</h1>
+      <div class="field">
+        <label>אימייל</label>
+        <input id="authEmail" type="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label>סיסמה</label>
+        <input id="authPass" type="password" placeholder="••••••••">
+      </div>
+      <div id="signupNameField" class="field hidden">
+        <label>שם מלא</label>
+        <input id="authName" placeholder="ישראל ישראלי">
+      </div>
+      <div id="authErr" class="error hidden"></div>
+      <button class="btn full" id="authSubmit">התחבר/י</button>
+      <div style="text-align:center;margin-top:16px;">
+        <button class="linklike" id="toggleMode">מאמנ/ת חדש/ה? צרי חשבון מאמן</button>
+      </div>
+      <div class="hint">מתאמנים אינם נרשמים עצמאית — המאמן יוצר עבורם משתמש וסיסמה מתוך לוח הבקרה.</div>
+    </div>
+  </div>`;
+
+  let mode = 'login';
+  const toggle = document.getElementById('toggleMode');
+  toggle.onclick = () => {
+    mode = mode === 'login' ? 'signup' : 'login';
+    document.getElementById('authTitle').textContent = mode === 'login' ? 'התחברות' : 'הרשמת מאמן חדש';
+    document.getElementById('authSubmit').textContent = mode === 'login' ? 'התחבר/י' : 'צור/י חשבון';
+    document.getElementById('signupNameField').classList.toggle('hidden', mode === 'login');
+    toggle.textContent = mode === 'login' ? 'מאמנ/ת חדש/ה? צרי חשבון מאמן' : 'כבר יש לך חשבון? התחברי';
+  };
+
+  document.getElementById('authSubmit').onclick = async () => {
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPass').value;
+    const errEl = document.getElementById('authErr');
+    errEl.classList.add('hidden');
+    if(!email || !password){ errEl.textContent = 'נא למלא אימייל וסיסמה.'; errEl.classList.remove('hidden'); return; }
+    try{
+      if(mode === 'signup'){
+        const fullName = document.getElementById('authName').value.trim() || 'מאמן';
+        const data = await authRequest('signup', { email, password });
+        const uid = data.user ? data.user.id : (data.id || null);
+        SESSION = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user || { id: uid, email } };
+        if(!SESSION.access_token){
+          // אימות מייל דלוק בפרויקט — התחברי ידנית אחרי אישור, או כבי Confirm email בהגדרות
+          errEl.textContent = 'החשבון נוצר, אך נדרש אימות מייל. כבי את "Confirm email" בהגדרות Supabase כדי לאפשר כניסה מיידית, ואז התחברי.';
+          errEl.classList.remove('hidden');
+          mode = 'login'; toggle.click(); toggle.click();
+          return;
+        }
+        await rest('profiles', { method:'POST', body:{ id: uid, role:'coach', full_name: fullName }, token: SESSION.access_token, prefer:'return=representation' });
+        PROFILE = { id: uid, role:'coach', full_name: fullName, coach_id: null };
+        saveLocal();
+        STATE.view = 'coach';
+        render();
+      } else {
+        const data = await authRequest('token?grant_type=password', { email, password });
+        SESSION = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user };
+        const rows = await rest('profiles', { query:`?id=eq.${data.user.id}&select=*` });
+        if(!rows || !rows.length) throw new Error('לא נמצא פרופיל למשתמש זה.');
+        PROFILE = rows[0];
+        saveLocal();
+        STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
+        render();
+      }
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+/* =====================================================================
+   מעטפת אפליקציה (סיידבר + תוכן)
+   ===================================================================== */
+function appShell(navItems, activeKey, contentHtml){
+  return `
+  <div class="shell">
+    <div class="sidebar">
+      <div class="navtop">${motionMark(30,true)}</div>
+      <div class="navwrap" style="display:flex;flex-direction:column;gap:4px;">
+        ${navItems.map(n => `<div class="nav-item ${n.key===activeKey?'active':''}" data-nav="${n.key}">${n.label}</div>`).join('')}
+      </div>
+      <div style="flex:1;"></div>
+      <div class="who">
+        <b>${PROFILE ? PROFILE.full_name : ''}</b>
+        <span>${PROFILE && PROFILE.role === 'coach' ? 'מאמן/ת' : 'מתאמן/ת'}</span>
+      </div>
+      <div class="nav-item" data-nav="logout" style="margin-top:6px;">🚪 התנתקות</div>
+    </div>
+    <div class="main">${contentHtml}</div>
+    <div class="bottom-nav">
+      ${navItems.map(n => `<div class="nav-item ${n.key===activeKey?'active':''}" data-nav="${n.key}">${n.label}</div>`).join('')}
+      <div class="nav-item" data-nav="logout">🚪 יציאה</div>
+    </div>
+  </div>`;
+}
+
+function bindShellNav(handlers){
+  document.querySelectorAll('[data-nav]').forEach(el => {
+    el.onclick = () => {
+      const key = el.getAttribute('data-nav');
+      if(key === 'logout'){
+        SESSION = null; PROFILE = null; STATE = { view:'auth', activeTraineeId:null, traineeCache:{} };
+        clearLocal();
+        render();
+        return;
+      }
+      if(handlers[key]) handlers[key]();
+    };
+  });
+}
+
+/* =====================================================================
+   מסך מאמן — רשימת מתאמנים
+   ===================================================================== */
+async function renderCoachHome(){
+  const app = document.getElementById('app');
+  app.innerHTML = appShell(
+    [{key:'home', label:'👥 המתאמנים שלי'}],
+    'home',
+    `<div class="panel"><p class="muted">טוען...</p></div>`
+  );
+  bindShellNav({ home: renderCoachHome });
+
+  let trainees = [];
+  try{
+    trainees = await rest('profiles', { query:`?coach_id=eq.${PROFILE.id}&select=*&order=created_at.desc` }) || [];
+  }catch(e){ showToast(e.message, true); }
+
+  let statsByTrainee = {};
+  if(trainees.length){
+    try{
+      const ids = trainees.map(t=>t.id).join(',');
+      const progressAll = await rest('progress_entries', { query:`?trainee_id=in.(${ids})&select=trainee_id,weight_kg,entry_date&order=entry_date.asc` }) || [];
+      const programsAll = await rest('programs', { query:`?trainee_id=in.(${ids})&select=trainee_id,program_days(completed,is_rest_day)&order=start_date.desc` }) || [];
+      trainees.forEach(t => {
+        const mine = progressAll.filter(p=>p.trainee_id===t.id);
+        const lastW = mine.length ? mine[mine.length-1].weight_kg : null;
+        const lastEntryDate = mine.length ? new Date(mine[mine.length-1].entry_date) : null;
+        const daysSince = lastEntryDate ? Math.floor((Date.now()-lastEntryDate.getTime())/86400000) : null;
+        const prog = programsAll.find(p=>p.trainee_id===t.id);
+        const workDays = prog ? (prog.program_days||[]).filter(d=>!d.is_rest_day) : [];
+        const adherence = workDays.length ? Math.round(100*workDays.filter(d=>d.completed).length/workDays.length) : null;
+        statsByTrainee[t.id] = { lastW, adherence, daysSince };
+      });
+    }catch(e){ /* לא קריטי - נציג רשימה בלי סטטיסטיקות */ }
+  }
+
+  const rowsHtml = trainees.length ? trainees.map(t => {
+    const s = statsByTrainee[t.id] || {};
+    return `
+    <div class="trainee-row" data-tid="${t.id}">
+      <div class="row-left">
+        <div class="avatar">${(t.full_name||'?').trim()[0] || '?'}</div>
+        <div>
+          <div class="name">${t.full_name}</div>
+          <div class="mini-row">
+            <span>${s.lastW!=null ? `⚖️ <b>${s.lastW}</b> ק"ג` : 'אין מדידות עדיין'}</span>
+            ${s.adherence!=null ? `<span>💪 <b>${s.adherence}%</b> עמידה בתוכנית</span>` : ''}
+            ${(s.daysSince===null || s.daysSince>=7) ? `<span style="color:var(--red);">⚠ ${s.daysSince===null?'אין פעילות':`${s.daysSince} ימים ללא עדכון`}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="icon-btn" data-delete-trainee="${t.id}" data-name="${t.full_name}" title="מחיקת מתאמן">🗑</button>
+        <div class="muted">›</div>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">${logoSVG(46)}<div>עדיין אין מתאמנים. הוסיפי את הראשון/ה שלך.</div></div>`;
+
+  document.querySelector('.main').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;">
+      <div>
+        <h2 class="page-title">המתאמנים שלי</h2>
+        <p class="page-sub">${trainees.length} מתאמנים פעילים</p>
+      </div>
+      <button class="btn" id="addTraineeBtn">+ הוספת מתאמן</button>
+    </div>
+    <div class="panel">${rowsHtml}</div>
+  `;
+
+  document.getElementById('addTraineeBtn').onclick = openAddTraineeModal;
+  document.querySelectorAll('[data-tid]').forEach(el => {
+    el.onclick = () => { STATE.activeTraineeId = el.getAttribute('data-tid'); renderCoachTraineeDetail(); };
+  });
+  document.querySelectorAll('[data-delete-trainee]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      confirmDeleteTrainee(btn.getAttribute('data-delete-trainee'), btn.getAttribute('data-name'), renderCoachHome);
+    };
+  });
+}
+
+function openMoveDayModal(dayId, currentNum, program, onDone){
+  onDone = onDone || renderCoachTraineeDetail;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  const totalDays = program.duration_days || (program.program_days||[]).length;
+  const byNumber = {};
+  (program.program_days || []).forEach(d => { byNumber[d.day_number] = d; });
+  const options = [];
+  for(let n=1; n<=totalDays; n++){
+    const lbl = dayLabel(program.start_date, n);
+    const existing = byNumber[n];
+    let suffix = '';
+    if(n === currentNum) suffix = ' (היום הנוכחי)';
+    else if(existing) suffix = existing.is_rest_day ? ' — כרגע יום מנוחה' : ` — כרגע: ${existing.title || 'אימון'} (יוחלף)`;
+    else suffix = ' — ריק';
+    options.push(`<option value="${n}" ${n===currentNum?'selected':''}>${lbl.weekday}, ${lbl.dateStr}${suffix}</option>`);
+  }
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>העברת האימון ליום אחר</h3>
+      <div class="field">
+        <label>לאיזה יום להעביר?</label>
+        <select id="moveDaySelect">${options.join('')}</select>
+      </div>
+      <p class="muted" style="font-size:12px;">אם היום הנבחר כבר תפוס באימון אחר, שני האימונים יוחלפו ביניהם.</p>
+      <div id="moveErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="moveCancel">ביטול</button>
+        <button class="btn full" id="moveConfirm">העברה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('moveCancel').onclick = () => bg.remove();
+  document.getElementById('moveConfirm').onclick = async () => {
+    const errEl = document.getElementById('moveErr');
+    const targetNum = parseInt(document.getElementById('moveDaySelect').value);
+    if(!targetNum){ errEl.textContent = 'נא לבחור יום.'; errEl.classList.remove('hidden'); return; }
+    if(targetNum === currentNum){ bg.remove(); return; }
+    try{
+      const allDays = program.program_days || [];
+      const targetDay = allDays.find(d => d.day_number === targetNum);
+      const targetLbl = dayLabel(program.start_date, targetNum);
+      if(targetDay){
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${targetDay.id}`, body:{ day_number: -1 } });
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${dayId}`, body:{ day_number: targetNum } });
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${targetDay.id}`, body:{ day_number: currentNum } });
+        showToast(`הוחלף עם ${targetLbl.weekday}, ${targetLbl.dateStr}`);
+      } else {
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${dayId}`, body:{ day_number: targetNum } });
+        showToast(`הועבר ל${targetLbl.weekday}, ${targetLbl.dateStr}`);
+      }
+      bg.remove();
+      onDone();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+function openAdherenceBoardModal(program, onDone){
+  onDone = onDone || renderCoachTraineeDetail;
+  const existingDays = (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number);
+  const byNumber = {};
+  existingDays.forEach(d => { byNumber[d.day_number] = d; });
+  const today = new Date(); today.setHours(0,0,0,0);
+  const totalDays = program.duration_days || existingDays.length;
+  const cellsHtml = [];
+  for(let n=1; n<=totalDays; n++){
+    const d = byNumber[n];
+    const lbl = dayLabel(program.start_date, n);
+    const cellDate = lbl.dateObj; cellDate.setHours(0,0,0,0);
+    const isToday = cellDate.getTime() === today.getTime();
+    const isPast = cellDate.getTime() < today.getTime();
+    let cls = '';
+    if(!d) cls = 'rest'; // יום שעדיין לא נבנה - מוצג מעומעם כמו יום מנוחה
+    else if(d.is_rest_day) cls = 'rest';
+    else if(d.completed) cls = 'done';
+    else if(isPast) cls = 'missed';
+    if(isToday) cls += ' today';
+    const canMove = d && !d.is_rest_day;
+    const titleText = d ? `${lbl.weekday} — ${lbl.fullDate}${d.title ? ' · '+d.title : ''}${canMove ? ' (לחיצה להעברה ליום אחר)' : ''}` : `${lbl.weekday} — ${lbl.fullDate} · טרם נבנה`;
+    cellsHtml.push(`<div class="board-cell ${cls}" title="${titleText}" ${canMove ? `data-boardmove="${d.id}" data-boardnum="${n}" style="cursor:pointer;"` : ''}>
+      <span style="font-size:12px;">${lbl.weekday.replace('יום ','')}</span>
+      <span style="font-size:9px;opacity:0.8;">${lbl.dateStr}</span>
+    </div>`);
+  }
+  const workDays = existingDays.filter(d=>!d.is_rest_day);
+  const completedCount = workDays.filter(d=>d.completed).length;
+  const missedCount = workDays.filter(d => {
+    const cellDate = dayDate(program.start_date, d.day_number); cellDate.setHours(0,0,0,0);
+    return !d.completed && cellDate.getTime() < today.getTime();
+  }).length;
+  const notBuiltCount = totalDays - existingDays.length;
+  const startLbl = new Date(program.start_date).toLocaleDateString('he-IL');
+  const endLbl = dayDate(program.start_date, program.duration_days).toLocaleDateString('he-IL');
+
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal" style="max-width:640px;">
+      <h3>${program.title}</h3>
+      <p class="muted" style="font-size:13px;margin-top:-8px;">${startLbl} — ${endLbl} · ${completedCount}/${workDays.length} אימונים הושלמו${missedCount ? ` · ${missedCount} הוחמצו` : ''}${notBuiltCount>0 ? ` · ${notBuiltCount} ימים עדיין לא נבנו` : ''}</p>
+      <p class="muted" style="font-size:12px;">💡 לוחצים על יום אימון (לא מנוחה) כדי להעביר אותו ליום אחר</p>
+      <div class="board-grid">${cellsHtml.join('')}</div>
+      <div class="board-legend">
+        <span><span class="legend-dot" style="background:var(--green);"></span>בוצע</span>
+        <span><span class="legend-dot" style="background:rgba(229,72,77,0.4);border:1px solid var(--red);"></span>הוחמץ</span>
+        <span><span class="legend-dot" style="background:var(--bg-elevated);border:1px dashed var(--border);"></span>מנוחה / טרם נבנה</span>
+        <span><span class="legend-dot" style="background:var(--bg-elevated);border:1px solid var(--border);"></span>ממתין</span>
+        <span><span class="legend-dot" style="outline:2px solid var(--blue-bright);background:var(--bg-elevated);"></span>היום</span>
+      </div>
+      <div class="modal-actions"><button class="btn full" id="boardClose">סגירה</button></div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('boardClose').onclick = () => bg.remove();
+  bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+  bg.querySelectorAll('[data-boardmove]').forEach(cell => {
+    cell.onclick = (ev) => {
+      ev.stopPropagation();
+      const dayId = cell.getAttribute('data-boardmove');
+      const currentNum = parseInt(cell.getAttribute('data-boardnum'));
+      bg.remove();
+      openMoveDayModal(dayId, currentNum, program, onDone);
+    };
+  });
+}
+
+function openEditTraineeModal(trainee){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>עריכת פרטי מתאמן</h3>
+      <div class="field"><label>שם מלא</label><input id="etName" value="${(trainee.full_name||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>טלפון</label><input id="etPhone" type="tel" placeholder="05X-XXXXXXX" value="${trainee.phone_number || ''}"></div>
+      <div class="config-note" style="margin-top:4px;">שינוי כתובת המייל להתחברות לא אפשרי מכאן מטעמי אבטחה - זה נעשה ב-Supabase Dashboard → Authentication → Users.</div>
+      <div id="etErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="etCancel">ביטול</button>
+        <button class="btn full" id="etSave">שמירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('etCancel').onclick = () => bg.remove();
+  document.getElementById('etSave').onclick = async () => {
+    const errEl = document.getElementById('etErr');
+    const name = document.getElementById('etName').value.trim();
+    if(!name){ errEl.textContent = 'נא להזין שם.'; errEl.classList.remove('hidden'); return; }
+    try{
+      await rest('profiles', { method:'PATCH', query:`?id=eq.${trainee.id}`, body:{
+        full_name: name, phone_number: document.getElementById('etPhone').value.trim() || null
+      }});
+      bg.remove();
+      showToast('הפרטים עודכנו');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+function confirmDeleteTrainee(traineeId, traineeName, onDone){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>מחיקת מתאמן</h3>
+      <p style="font-size:14px;color:var(--muted);line-height:1.6;">
+        למחוק את <b style="color:var(--white);">${traineeName}</b>? פעולה זו תמחק לצמיתות את התוכנית, התפריט וכל היסטוריית המדידות שלו/ה. לא ניתן לשחזר.
+      </p>
+      <div id="delErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="delCancel">ביטול</button>
+        <button class="btn danger full" id="delConfirm">כן, למחוק לצמיתות</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('delCancel').onclick = () => bg.remove();
+  document.getElementById('delConfirm').onclick = async () => {
+    try{
+      await rest('profiles', { method:'DELETE', query:`?id=eq.${traineeId}` });
+      bg.remove();
+      showToast(`${traineeName} נמחק/ה`);
+      onDone();
+    }catch(e){
+      document.getElementById('delErr').textContent = e.message;
+      document.getElementById('delErr').classList.remove('hidden');
+    }
+  };
+}
+
+function openAddTraineeModal(){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>הוספת מתאמן חדש</h3>
+      <div class="field"><label>שם מלא</label><input id="ntName"></div>
+      <div class="field"><label>אימייל להתחברות</label><input id="ntEmail" type="email"></div>
+      <div class="field"><label>סיסמה זמנית</label><input id="ntPass" type="text" placeholder="לפחות 6 תווים"></div>
+      <div id="ntErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="ntCancel">ביטול</button>
+        <button class="btn full" id="ntSave">יצירת מתאמן</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('ntCancel').onclick = () => bg.remove();
+  document.getElementById('ntSave').onclick = async () => {
+    const full_name = document.getElementById('ntName').value.trim();
+    const email = document.getElementById('ntEmail').value.trim();
+    const password = document.getElementById('ntPass').value;
+    const err = document.getElementById('ntErr');
+    if(!full_name || !email || password.length < 6){
+      err.textContent = 'נא למלא שם, אימייל וסיסמה (6+ תווים).';
+      err.classList.remove('hidden');
+      return;
+    }
+    try{
+      const data = await authRequest('signup', { email, password });
+      const uid = data.user ? data.user.id : data.id;
+      if(!uid) throw new Error('יצירת המשתמש נכשלה.');
+      await rest('profiles', { method:'POST', body:{ id: uid, role:'trainee', full_name, coach_id: PROFILE.id }, prefer:'return=representation' });
+      bg.remove();
+      showToast(`המתאמן ${full_name} נוצר בהצלחה`);
+      renderCoachHome();
+    }catch(e){
+      err.textContent = e.message;
+      err.classList.remove('hidden');
+    }
+  };
+}
+
+/* =====================================================================
+   מסך מאמן — פרטי מתאמן: היקפים / משקל + עריכת תוכנית
+   ===================================================================== */
+function svgLineChart(points, w, h, goal){
+  // points: [{x: index, y: value}]
+  w = w || 560; h = h || 160;
+  if(!points.length) return `<div class="empty">אין עדיין נתוני משקל</div>`;
+  const vals = points.map(p=>p.y).concat(goal!=null ? [parseFloat(goal)] : []);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const pad = 24;
+  const range = (max - min) || 1;
+  const stepX = points.length > 1 ? (w - pad*2) / (points.length - 1) : 0;
+  const coords = points.map((p,i) => {
+    const x = pad + i * stepX;
+    const y = h - pad - ((p.y - min) / range) * (h - pad*2);
+    return [x,y];
+  });
+  const path = coords.map((c,i) => (i===0?'M':'L') + c[0].toFixed(1) + ',' + c[1].toFixed(1)).join(' ');
+  const dots = coords.map(c => `<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3.5" fill="#5B93FF"/>`).join('');
+  let goalLine = '';
+  if(goal!=null){
+    const gy = h - pad - ((parseFloat(goal) - min) / range) * (h - pad*2);
+    goalLine = `<line x1="${pad}" y1="${gy.toFixed(1)}" x2="${w-pad}" y2="${gy.toFixed(1)}" stroke="#33C481" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+  }
+  return `<svg width="100%" viewBox="0 0 ${w} ${h}" style="overflow:visible;">
+    ${goalLine}
+    <path d="${path}" fill="none" stroke="#2F6FED" stroke-width="2.5"/>
+    ${dots}
+  </svg>`;
+}
+
+async function renderCoachTraineeDetail(){
+  const tid = STATE.activeTraineeId;
+  const app = document.getElementById('app');
+  app.innerHTML = appShell(
+    [{key:'home', label:'👥 המתאמנים שלי'}], 'home',
+    `<p class="muted">טוען פרטי מתאמן...</p>`
+  );
+  bindShellNav({ home: renderCoachHome });
+
+  let trainee, progress = [], programs = [], nutritionPlans = [];
+  try{
+    const rows = await rest('profiles', { query:`?id=eq.${tid}&select=*` });
+    trainee = rows[0];
+    progress = await rest('progress_entries', { query:`?trainee_id=eq.${tid}&select=*&order=entry_date.asc` }) || [];
+    programs = await rest('programs', { query:`?trainee_id=eq.${tid}&select=*,program_days(*,exercises(*))&order=start_date.desc` }) || [];
+    nutritionPlans = await rest('nutrition_plans', { query:`?trainee_id=eq.${tid}&select=*,meals(*)&order=created_at.desc` }) || [];
+  }catch(e){ showToast(e.message, true); return; }
+
+  const nutritionPlan = nutritionPlans[0] || null;
+  const mealsList = nutritionPlan ? (nutritionPlan.meals || []).slice().sort((a,b)=>a.order_index-b.order_index) : [];
+
+  const program = programs[0] || null;
+  const lastWeight = progress.length ? progress[progress.length-1].weight_kg : null;
+  const firstWeight = progress.length ? progress[0].weight_kg : null;
+  const delta = (lastWeight!=null && firstWeight!=null) ? (lastWeight - firstWeight).toFixed(1) : null;
+  const goalWeight = trainee.goal_weight_kg;
+
+  document.querySelector('.main').innerHTML = `
+    <button class="linklike" id="backBtn" style="margin-bottom:14px;">→ חזרה לרשימה</button>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 class="page-title">${trainee.full_name}</h2>
+        <p class="page-sub">מעקב התקדמות ותוכנית אימונים${goalWeight!=null ? ` · יעד: ${goalWeight} ק"ג` : ''}${trainee.phone_number ? ` · 📞 ${trainee.phone_number}` : ''}</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${program ? `<button class="btn ghost small" id="showBoardBtn">🗓 לוח 90 יום</button>` : ''}
+        ${progress.length ? `<button class="btn ghost small" id="exportCoachBtn">⬇ ייצוא CSV</button>` : ''}
+        <button class="btn ghost small" id="editTraineeBtn">✎ עריכת פרטים</button>
+        <button class="icon-btn" id="deleteTraineeBtn" title="מחיקת מתאמן">🗑</button>
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-bottom:16px;">
+      <div class="panel stat"><div class="v">${lastWeight ?? '—'}</div><div class="l">משקל נוכחי (ק"ג)</div></div>
+      <div class="panel stat"><div class="v" style="color:${delta<0?'var(--green)':delta>0?'var(--red)':'var(--white)'}">${delta!=null ? (delta>0?'+':'')+delta : '—'}</div><div class="l">שינוי כולל (ק"ג)</div></div>
+      <div class="panel stat"><div class="v">${program ? program.duration_days : '—'}</div><div class="l">ימי תוכנית</div></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>מגמת משקל${goalWeight!=null ? ' (הקו המקווקו הוא היעד)' : ''}</h3>
+      ${svgLineChart(progress.filter(p=>p.weight_kg!=null).map((p,i)=>({x:i,y:parseFloat(p.weight_kg)})), 560, 160, goalWeight)}
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>היסטוריית מדידות</h3>
+      ${progress.length ? `<table>
+        <tr><th></th><th>תאריך</th><th>משקל</th><th>חזה</th><th>מותן</th><th>ירכיים</th><th>זרוע</th><th>ירך</th></tr>
+        ${progress.slice().reverse().map(p => `<tr>
+          <td>${p.photo_url ? `<img class="photo-thumb" src="${p.photo_url}" data-full="${p.photo_url}">` : ''}</td>
+          <td>${new Date(p.entry_date).toLocaleDateString('he-IL')}</td>
+          <td>${p.weight_kg ?? '-'}</td><td>${p.chest_cm ?? '-'}</td><td>${p.waist_cm ?? '-'}</td>
+          <td>${p.hips_cm ?? '-'}</td><td>${p.arm_cm ?? '-'}</td><td>${p.thigh_cm ?? '-'}</td>
+        </tr>`).join('')}
+      </table>` : `<div class="empty">המתאמן טרם הזין נתוני מדידה</div>`}
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;">תפריט תזונה</h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${!nutritionPlan ? `<button class="btn small" id="createNutritionBtn">+ יצירת תפריט</button>` : `
+            <button class="btn small" id="addMealBtn">+ הוספת ארוחה</button>
+            <button class="btn ghost small" id="editPlanBtn">✎ עריכת יעדים</button>
+            <button class="icon-btn" id="deletePlanBtn" title="מחיקת התפריט כולו">🗑</button>
+          `}
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        ${nutritionPlan ? `
+          <div class="macro-grid" style="margin-bottom:14px;">
+            <div class="macro-box"><div class="v">${nutritionPlan.daily_calories ?? '—'}</div><div class="l">קלוריות</div></div>
+            <div class="macro-box"><div class="v">${nutritionPlan.daily_protein_g ?? '—'}</div><div class="l">חלבון</div></div>
+            <div class="macro-box"><div class="v">${nutritionPlan.daily_carbs_g ?? '—'}</div><div class="l">פחמימות</div></div>
+            <div class="macro-box"><div class="v">${nutritionPlan.daily_fat_g ?? '—'}</div><div class="l">שומן</div></div>
+          </div>
+          ${mealsList.length ? mealsList.map(m => `
+            <div class="meal-card">
+              <div class="meal-head">
+                <div class="meal-name">${m.name}</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  ${(m.calories || m.protein_g) ? `<div class="meal-macros">${m.calories ? m.calories+' קק"ל' : ''}${m.calories && m.protein_g ? ' · ' : ''}${m.protein_g ? m.protein_g+'g חלבון' : ''}</div>` : ''}
+                  <button class="icon-btn" data-edit-meal="${m.id}" title="עריכה" style="width:28px;height:28px;font-size:13px;">✎</button>
+                  <button class="icon-btn" data-delete-meal="${m.id}" title="מחיקה" style="width:28px;height:28px;font-size:13px;">✕</button>
+                </div>
+              </div>
+              ${m.description ? `<div class="meal-desc">${m.description}</div>` : ''}
+            </div>`).join('') : `<div class="empty">עדיין לא נוספו ארוחות</div>`}
+        ` : `<div class="empty">עדיין לא נוצר תפריט למתאמן זה</div>`}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;">תוכנית אימונים (90 יום)</h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${!program ? `<button class="btn small" id="createProgramBtn">+ יצירת תוכנית</button>` : `
+            <button class="btn small" id="addDayBtn">+ הוספת יום</button>
+            <button class="icon-btn" id="deleteProgramBtn" title="מחיקת התוכנית כולה">🗑</button>
+          `}
+        </div>
+      </div>
+      <div id="programArea" style="margin-top:14px;">
+        ${program ? renderDaysList(program.program_days || [], program.start_date) : `<div class="empty">עדיין לא נוצרה תוכנית למתאמן זה</div>`}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('backBtn').onclick = renderCoachHome;
+  document.getElementById('deleteTraineeBtn').onclick = () => {
+    confirmDeleteTrainee(tid, trainee.full_name, renderCoachHome);
+  };
+  document.getElementById('editTraineeBtn').onclick = () => openEditTraineeModal(trainee);
+  const boardBtn = document.getElementById('showBoardBtn');
+  if(boardBtn) boardBtn.onclick = () => openAdherenceBoardModal(program, renderCoachTraineeDetail);
+  if(!program){
+    document.getElementById('createProgramBtn').onclick = () => openCreateProgramModal(tid);
+  } else {
+    document.getElementById('addDayBtn').onclick = () => openAddDayModal(program.id, program.start_date);
+    document.getElementById('deleteProgramBtn').onclick = () => {
+      if(!confirm(`למחוק את כל התוכנית "${program.title}" כולל כל הימים והתרגילים? לא ניתן לשחזר. אחרי המחיקה תוכלי ליצור תוכנית חדשה.`)) return;
+      rest('programs', { method:'DELETE', query:`?id=eq.${program.id}` })
+        .then(() => { showToast('התוכנית נמחקה'); renderCoachTraineeDetail(); })
+        .catch(e => showToast(e.message, true));
+    };
+  }
+  if(!nutritionPlan){
+    document.getElementById('createNutritionBtn').onclick = () => openCreateNutritionModal(tid);
+  } else {
+    document.getElementById('addMealBtn').onclick = () => openAddMealModal(nutritionPlan.id);
+    document.getElementById('editPlanBtn').onclick = () => openCreateNutritionModal(tid, nutritionPlan);
+    document.getElementById('deletePlanBtn').onclick = () => {
+      if(!confirm(`למחוק את כל התפריט "${nutritionPlan.title}" כולל כל הארוחות? לא ניתן לשחזר.`)) return;
+      rest('nutrition_plans', { method:'DELETE', query:`?id=eq.${nutritionPlan.id}` })
+        .then(() => { showToast('התפריט נמחק'); renderCoachTraineeDetail(); })
+        .catch(e => showToast(e.message, true));
+    };
+    document.querySelectorAll('[data-edit-meal]').forEach(btn => {
+      btn.onclick = () => {
+        const meal = mealsList.find(m => m.id === btn.getAttribute('data-edit-meal'));
+        if(meal) openAddMealModal(nutritionPlan.id, meal);
+      };
+    });
+    document.querySelectorAll('[data-delete-meal]').forEach(btn => {
+      btn.onclick = () => {
+        if(!confirm('למחוק את הארוחה הזו?')) return;
+        rest('meals', { method:'DELETE', query:`?id=eq.${btn.getAttribute('data-delete-meal')}` })
+          .then(() => { showToast('הארוחה נמחקה'); renderCoachTraineeDetail(); })
+          .catch(e => showToast(e.message, true));
+      };
+    });
+  }
+  document.querySelectorAll('[data-manage-ex]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const dayId = btn.getAttribute('data-manage-ex');
+      const day = (program.program_days || []).find(d => d.id === dayId);
+      if(day) openManageExercisesModal(day);
+    };
+  });
+  document.querySelectorAll('[data-move-day]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const dayId = btn.getAttribute('data-move-day');
+      const currentNum = parseInt(btn.getAttribute('data-daynum'));
+      openMoveDayModal(dayId, currentNum, program);
+    };
+  });
+  document.querySelectorAll('[data-open-day]').forEach(row => {
+    row.onclick = () => {
+      const dayId = row.getAttribute('data-open-day');
+      const day = (program.program_days || []).find(d => d.id === dayId);
+      if(day && !day.is_rest_day) openManageExercisesModal(day);
+    };
+  });
+  const exportBtn = document.getElementById('exportCoachBtn');
+  if(exportBtn) exportBtn.onclick = () => exportCSV(`motion-progress-${trainee.full_name}.csv`,
+    ['תאריך','משקל','חזה','מותן','ירכיים','זרוע','ירך','הערות'],
+    progress.map(p => [new Date(p.entry_date).toLocaleDateString('he-IL'), p.weight_kg, p.chest_cm, p.waist_cm, p.hips_cm, p.arm_cm, p.thigh_cm, p.notes])
+  );
+  document.querySelectorAll('.photo-thumb').forEach(img => {
+    img.onclick = () => {
+      const lb = document.createElement('div');
+      lb.className = 'lightbox-bg';
+      lb.innerHTML = `<img src="${img.getAttribute('data-full')}">`;
+      lb.onclick = () => lb.remove();
+      document.body.appendChild(lb);
+    };
+  });
+}
+
+function renderDaysList(days, startDate){
+  if(!days.length) return `<div class="empty">אין ימים בתוכנית עדיין</div>`;
+  const sorted = days.slice().sort((a,b)=>a.day_number-b.day_number);
+  return sorted.map(d => {
+    const exCount = (d.exercises || []).length;
+    const lbl = startDate ? dayLabel(startDate, d.day_number) : null;
+    return `
+    <div class="day-row ${d.completed?'done':''} ${d.is_rest_day?'rest':''}" data-open-day="${d.id}" style="cursor:${d.is_rest_day?'default':'pointer'};">
+      <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
+      <div class="day-info">
+        <div class="t">${d.is_rest_day ? 'יום מנוחה' : `${exCount} תרגילים`}</div>
+      </div>
+      ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : `<button class="btn ghost small" data-manage-ex="${d.id}">✎ תרגילים</button>`}
+      ${d.trainee_note ? `<span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);" title="${d.trainee_note.replace(/"/g,'&quot;')}">💬 הערה</span>` : ''}
+      <button class="icon-btn" data-move-day="${d.id}" data-daynum="${d.day_number}" title="העברה ליום אחר">↕</button>
+      ${d.completed ? `<span class="badge" style="background:#0F3D2A;color:var(--green);">בוצע</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+const PROGRAM_TEMPLATES = {
+  abc: {
+    label: 'A / B / C',
+    week: [
+      { title:'אימון A — חזה, כתפיים, טרייספס', exercises:[
+        {name:'לחיצת חזה עם משקולת', sets:4, reps:'10'}, {name:'לחיצת כתפיים עם משקולות', sets:3, reps:'10'},
+        {name:'הרחקות לצדדים', sets:3, reps:'12'}, {name:'דחיקת טרייספס בפולי', sets:3, reps:'12'}
+      ]},
+      { title:'אימון B — גב, ביצפס', exercises:[
+        {name:'מתח', sets:3, reps:'8'}, {name:'חתירה בישיבה (כבל)', sets:3, reps:'10'},
+        {name:'חתירה עם משקולת יד', sets:3, reps:'10'}, {name:'כפיפת מרפק עם מוט (Bicep Curl)', sets:3, reps:'12'}
+      ]},
+      { title:'אימון C — רגליים וליבה', exercises:[
+        {name:'סקוואט עם מוט', sets:4, reps:'10'}, {name:'דדליפט', sets:3, reps:'8'},
+        {name:'לאנג׳ הליכה', sets:3, reps:'12'}, {name:'פלאנק', sets:3, reps:'45 שניות'}
+      ]},
+      { title:'מנוחה', is_rest_day:true },
+      { title:'אימון A — חזה, כתפיים, טרייספס', exercises:[
+        {name:'לחיצת חזה עם משקולת', sets:4, reps:'10'}, {name:'לחיצת כתפיים עם משקולות', sets:3, reps:'10'},
+        {name:'הרחקות לצדדים', sets:3, reps:'12'}, {name:'דחיקת טרייספס בפולי', sets:3, reps:'12'}
+      ]},
+      { title:'אימון B — גב, ביצפס', exercises:[
+        {name:'מתח', sets:3, reps:'8'}, {name:'חתירה בישיבה (כבל)', sets:3, reps:'10'},
+        {name:'חתירה עם משקולת יד', sets:3, reps:'10'}, {name:'כפיפת מרפק עם מוט (Bicep Curl)', sets:3, reps:'12'}
+      ]},
+      { title:'מנוחה', is_rest_day:true }
+    ]
+  },
+  full_body: {
+    label: 'פול בודי 3x',
+    week: [
+      { title:'פול בודי A', exercises:[
+        {name:'סקוואט עם מוט', sets:3, reps:'10'}, {name:'לחיצת חזה עם מוט', sets:3, reps:'10'},
+        {name:'חתירה ישרה עם מוט (Bent Over Row)', sets:3, reps:'10'}, {name:'פלאנק', sets:3, reps:'40 שניות'}
+      ]},
+      { title:'מנוחה', is_rest_day:true },
+      { title:'פול בודי B', exercises:[
+        {name:'דדליפט', sets:3, reps:'8'}, {name:'לחיצת כתפיים עם משקולות', sets:3, reps:'10'},
+        {name:'מתח / פולי עליון', sets:3, reps:'8'}, {name:'כפיפות בטן (Crunch)', sets:3, reps:'15'}
+      ]},
+      { title:'מנוחה', is_rest_day:true },
+      { title:'פול בודי C', exercises:[
+        {name:'לאנג׳ הליכה', sets:3, reps:'12'}, {name:'דיפים (Dips)', sets:3, reps:'10'},
+        {name:'חתירה עם משקולת יד', sets:3, reps:'10'}, {name:'הרמת רגליים תלויה', sets:3, reps:'12'}
+      ]},
+      { title:'מנוחה', is_rest_day:true },
+      { title:'מנוחה', is_rest_day:true }
+    ]
+  },
+  ppl: {
+    label: 'Push / Pull / Legs',
+    week: [
+      { title:'Push', exercises:[
+        {name:'לחיצת חזה עם מוט', sets:4, reps:'10'}, {name:'לחיצת כתפיים עם משקולות', sets:3, reps:'10'}, {name:'דחיקת טרייספס בפולי', sets:3, reps:'12'}
+      ]},
+      { title:'Pull', exercises:[
+        {name:'מתח', sets:3, reps:'8'}, {name:'חתירה בישיבה (כבל)', sets:3, reps:'10'}, {name:'כפיפת מרפק עם מוט (Bicep Curl)', sets:3, reps:'12'}
+      ]},
+      { title:'Legs', exercises:[
+        {name:'סקוואט עם מוט', sets:4, reps:'10'}, {name:'דדליפט', sets:3, reps:'8'}, {name:'פשיטת ברך במכונה (Leg Extension)', sets:3, reps:'12'}
+      ]},
+      { title:'מנוחה', is_rest_day:true },
+      { title:'Push', exercises:[
+        {name:'לחיצת חזה עם מוט', sets:4, reps:'10'}, {name:'לחיצת כתפיים עם משקולות', sets:3, reps:'10'}, {name:'דחיקת טרייספס בפולי', sets:3, reps:'12'}
+      ]},
+      { title:'Pull', exercises:[
+        {name:'מתח', sets:3, reps:'8'}, {name:'חתירה בישיבה (כבל)', sets:3, reps:'10'}, {name:'כפיפת מרפק עם מוט (Bicep Curl)', sets:3, reps:'12'}
+      ]},
+      { title:'מנוחה', is_rest_day:true }
+    ]
+  },
+  upper_lower: {
+    label: 'עליון / תחתון',
+    week: [
+      { title:'פלג גוף עליון', exercises:[
+        {name:'לחיצת חזה עם מוט', sets:3, reps:'10'}, {name:'חתירה בישיבה (כבל)', sets:3, reps:'10'},
+        {name:'לחיצת כתפיים עם משקולות', sets:3, reps:'10'}, {name:'כפיפת מרפק עם מוט (Bicep Curl)', sets:3, reps:'12'}
+      ]},
+      { title:'פלג גוף תחתון', exercises:[
+        {name:'סקוואט עם מוט', sets:3, reps:'10'}, {name:'דדליפט עם משקולות', sets:3, reps:'10'}, {name:'פלאנק', sets:3, reps:'40 שניות'}
+      ]},
+      { title:'מנוחה', is_rest_day:true },
+      { title:'פלג גוף עליון', exercises:[
+        {name:'לחיצת חזה עם מוט', sets:4, reps:'8'}, {name:'מתח / פולי עליון', sets:3, reps:'8'}, {name:'הרחקות לצדדים', sets:3, reps:'12'}
+      ]},
+      { title:'פלג גוף תחתון', exercises:[
+        {name:'סקוואט עם מוט', sets:4, reps:'8'}, {name:'כפיפת ברך שכיבה (Leg Curl)', sets:3, reps:'12'}, {name:'היפ תראסט (Hip Thrust)', sets:3, reps:'12'}
+      ]},
+      { title:'קרדיו קל', exercises:[ {name:'הליכה מהירה / קרדיו', sets:1, reps:'30 דקות'} ]},
+      { title:'מנוחה', is_rest_day:true }
+    ]
+  },
+  cardio: {
+    label: 'ירידה במשקל',
+    week: [
+      { title:'אימון כוח מלא', exercises:[
+        {name:'סקוואט משקל גוף', sets:3, reps:'15'}, {name:'שכיבות שמיכה', sets:3, reps:'12'},
+        {name:'חתירה עם משקולת יד', sets:3, reps:'12'}, {name:'פלאנק', sets:3, reps:'40 שניות'}
+      ]},
+      { title:'קרדיו', exercises:[ {name:'הליכה מהירה / קרדיו', sets:1, reps:'35 דקות'} ]},
+      { title:'אימון כוח מלא', exercises:[
+        {name:'סקוואט משקל גוף', sets:3, reps:'15'}, {name:'שכיבות שמיכה', sets:3, reps:'12'},
+        {name:'חתירה עם משקולת יד', sets:3, reps:'12'}, {name:'פלאנק', sets:3, reps:'40 שניות'}
+      ]},
+      { title:'קרדיו', exercises:[ {name:'ברפי', sets:4, reps:'12'}, {name:'ג׳אמפינג ג׳ק', sets:4, reps:'30 שניות'} ]},
+      { title:'אימון כוח מלא', exercises:[
+        {name:'סקוואט משקל גוף', sets:3, reps:'15'}, {name:'שכיבות שמיכה', sets:3, reps:'12'},
+        {name:'חתירה עם משקולת יד', sets:3, reps:'12'}, {name:'פלאנק', sets:3, reps:'40 שניות'}
+      ]},
+      { title:'הליכה קלה', exercises:[ {name:'הליכה מהירה / קרדיו', sets:1, reps:'45 דקות'} ]},
+      { title:'מנוחה', is_rest_day:true }
+    ]
+  }
+};
+
+function openCreateProgramModal(traineeId){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  let selectedTemplate = null;
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>תוכנית אימונים חדשה</h3>
+      <div class="field">
+        <label>תבנית מוכנה (אופציונלי)</label>
+        <div class="templates-row">
+          <div class="template-chip selected" data-tpl="">ריקה (אוסיף ימים בעצמי)</div>
+          ${Object.entries(PROGRAM_TEMPLATES).map(([k,t]) => `<div class="template-chip" data-tpl="${k}">${t.label}</div>`).join('')}
+        </div>
+      </div>
+      <div class="field"><label>שם התוכנית</label><input id="pTitle" value="תוכנית 90 יום"></div>
+      <div class="field"><label>תאריך התחלה</label><input id="pStart" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>משך כולל (ימים)</label><input id="pDur" type="number" value="90"></div>
+      <div class="field hidden" id="fillDaysField">
+        <label>כמה ימים למלא מראש מהתבנית? (אפשר להוסיף עוד ימים ידנית בהמשך)</label>
+        <input id="pFillDays" type="number" value="7" min="1">
+      </div>
+      <div id="pErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="pCancel">ביטול</button>
+        <button class="btn full" id="pSave">יצירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  bg.querySelectorAll('[data-tpl]').forEach(chip => {
+    chip.onclick = () => {
+      bg.querySelectorAll('[data-tpl]').forEach(c=>c.classList.remove('selected'));
+      chip.classList.add('selected');
+      selectedTemplate = chip.getAttribute('data-tpl') || null;
+      document.getElementById('fillDaysField').classList.toggle('hidden', !selectedTemplate);
+    };
+  });
+  document.getElementById('pCancel').onclick = () => bg.remove();
+  document.getElementById('pSave').onclick = async () => {
+    const errEl = document.getElementById('pErr');
+    const saveBtn = document.getElementById('pSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'יוצרת...';
+    try{
+      const duration = parseInt(document.getElementById('pDur').value) || 90;
+      const program = await rest('programs', { method:'POST', body:{
+        trainee_id: traineeId, coach_id: PROFILE.id,
+        title: document.getElementById('pTitle').value.trim() || 'תוכנית 90 יום',
+        start_date: document.getElementById('pStart').value,
+        duration_days: duration
+      }, prefer:'return=representation' });
+      const newProgram = program && program[0];
+      if(newProgram && selectedTemplate && PROGRAM_TEMPLATES[selectedTemplate]){
+        const fillDays = Math.min(duration, parseInt(document.getElementById('pFillDays').value) || 7);
+        const week = PROGRAM_TEMPLATES[selectedTemplate].week;
+        for(let i=0;i<fillDays;i++){
+          const tpl = week[i % week.length];
+          saveBtn.textContent = `יוצרת יום ${i+1}/${fillDays}...`;
+          const createdDay = await rest('program_days', { method:'POST', body:{
+            program_id: newProgram.id, day_number: i+1,
+            title: tpl.title, description: tpl.description || '', is_rest_day: !!tpl.is_rest_day
+          }, prefer:'return=representation' });
+          const dayRow = createdDay && createdDay[0];
+          if(dayRow && !tpl.is_rest_day && tpl.exercises && tpl.exercises.length){
+            await rest('exercises', { method:'POST', body: tpl.exercises.map((ex,idx) => ({
+              day_id: dayRow.id, order_index: idx, name: ex.name,
+              target_sets: ex.sets || null, target_reps: ex.reps || null, target_weight_kg: ex.weight || null
+            })) });
+          }
+        }
+      }
+      bg.remove();
+      showToast('התוכנית נוצרה עם כל התרגילים - אפשר להוסיף עוד ימים בכל שלב');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+      saveBtn.disabled = false; saveBtn.textContent = 'יצירה';
+    }
+  };
+}
+
+async function openAddDayModal(programId, programStartDate){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  let exerciseRows = [];
+  const templates = await getDayTemplates();
+  function renderExerciseRows(){
+    const wrap = document.getElementById('exRowsWrap');
+    wrap.innerHTML = exerciseRows.map((r,i) => `
+      <div class="exercise-builder-row">
+        <input placeholder="שם התרגיל" data-ex="name" data-i="${i}" value="${r.name||''}">
+        <input placeholder="סטים" type="number" data-ex="sets" data-i="${i}" value="${r.sets||''}">
+        <input placeholder="חזרות" data-ex="reps" data-i="${i}" value="${r.reps||''}">
+        <input placeholder='ק"ג' type="number" step="0.5" data-ex="weight" data-i="${i}" value="${r.weight||''}">
+        <button type="button" class="icon-btn" data-lib="${i}" title="בחירה מהספרייה" style="color:var(--blue-bright);border-color:var(--blue-dim);">📚</button>
+        <button type="button" class="icon-btn" data-remove="${i}">✕</button>
+      </div>`).join('');
+    wrap.querySelectorAll('[data-ex]').forEach(inp => {
+      inp.oninput = () => { exerciseRows[inp.getAttribute('data-i')][inp.getAttribute('data-ex')] = inp.value; };
+    });
+    wrap.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.onclick = () => { exerciseRows.splice(parseInt(btn.getAttribute('data-remove')),1); renderExerciseRows(); };
+    });
+    wrap.querySelectorAll('[data-lib]').forEach(btn => {
+      btn.onclick = () => openLibraryPicker(item => {
+        exerciseRows[parseInt(btn.getAttribute('data-lib'))].name = item.name;
+        renderExerciseRows();
+      });
+    });
+  }
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>הוספת יום לתוכנית</h3>
+      ${templatePickerHtml(templates)}
+      <div class="field"><label>מספר יום</label><input id="dNum" type="number" min="1"><div id="dNumPreview" class="muted" style="font-size:12px;margin-top:5px;"></div></div>
+      <div class="field"><label>כותרת</label><input id="dTitle" placeholder="לדוגמה: פלג גוף עליון"></div>
+      <div class="field"><label>תיאור כללי (אופציונלי)</label><textarea id="dDesc" rows="2" placeholder="הערות כלליות ליום..."></textarea></div>
+      <div class="field"><label><input type="checkbox" id="dRest" style="width:auto;margin-left:8px;">יום מנוחה</label></div>
+      <div class="field" id="exercisesField">
+        <label>תרגילים ביום זה</label>
+        <div id="exRowsWrap"></div>
+        <div class="day-actions-row" style="margin-top:6px;">
+          <button type="button" class="add-exercise-link" id="addExRow" style="flex:1;">+ הוספת תרגיל</button>
+          <button type="button" class="btn ghost small" id="saveTplBtn">💾 שמירה כתבנית</button>
+        </div>
+      </div>
+      <div id="dErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="dCancel">ביטול</button>
+        <button class="btn full" id="dSave">הוספה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  renderExerciseRows();
+  const dNumInput = document.getElementById('dNum');
+  dNumInput.oninput = () => {
+    const n = parseInt(dNumInput.value);
+    const preview = document.getElementById('dNumPreview');
+    if(n && programStartDate){
+      const lbl = dayLabel(programStartDate, n);
+      preview.textContent = `= ${lbl.weekday}, ${lbl.fullDate}`;
+    } else {
+      preview.textContent = '';
+    }
+  };
+  document.getElementById('addExRow').onclick = () => { exerciseRows.push({}); renderExerciseRows(); };
+  document.getElementById('dRest').onchange = (ev) => {
+    document.getElementById('exercisesField').style.display = ev.target.checked ? 'none' : 'block';
+  };
+  document.getElementById('saveTplBtn').onclick = () => saveDayAsTemplate(
+    document.getElementById('dTitle').value.trim(), document.getElementById('dDesc').value.trim(), exerciseRows
+  );
+  const tplApply = document.getElementById('tplApply');
+  if(tplApply) tplApply.onclick = () => {
+    const tid = document.getElementById('tplSelect').value;
+    const tpl = templates.find(t => t.id === tid);
+    if(!tpl) return;
+    document.getElementById('dTitle').value = tpl.title || tpl.name;
+    document.getElementById('dDesc').value = tpl.description || '';
+    exerciseRows = (tpl.exercises || []).map(e => ({ name: e.name, sets: e.target_sets ?? '', reps: e.target_reps ?? '', weight: e.target_weight_kg ?? '' }));
+    renderExerciseRows();
+    showToast(`התבנית "${tpl.name}" נטענה`);
+  };
+  document.getElementById('dCancel').onclick = () => bg.remove();
+  document.getElementById('dSave').onclick = async () => {
+    const dayNum = parseInt(document.getElementById('dNum').value);
+    const errEl = document.getElementById('dErr');
+    if(!dayNum){ errEl.textContent = 'נא להזין מספר יום.'; errEl.classList.remove('hidden'); return; }
+    const saveBtn = document.getElementById('dSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'שומרת...';
+    try{
+      const isRest = document.getElementById('dRest').checked;
+      const created = await rest('program_days', { method:'POST', body:{
+        program_id: programId, day_number: dayNum,
+        title: document.getElementById('dTitle').value.trim(),
+        description: document.getElementById('dDesc').value.trim(),
+        is_rest_day: isRest
+      }, prefer:'return=representation' });
+      const newDay = created && created[0];
+      const validRows = exerciseRows.filter(r => r.name && r.name.trim());
+      if(newDay && !isRest && validRows.length){
+        const exBody = validRows.map((r,i) => ({
+          day_id: newDay.id, order_index: i, name: r.name.trim(),
+          target_sets: r.sets ? parseInt(r.sets) : null,
+          target_reps: r.reps ? String(r.reps).trim() : null,
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+        }));
+        await rest('exercises', { method:'POST', body: exBody });
+      }
+      bg.remove();
+      showToast('היום נוסף לתוכנית');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+      saveBtn.disabled = false; saveBtn.textContent = 'הוספה';
+    }
+  };
+}
+
+async function openManageExercisesModal(day){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  const templates = await getDayTemplates();
+  let rows = (day.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index).map(e => ({
+    id: e.id, name: e.name, sets: e.target_sets ?? '', reps: e.target_reps ?? '', weight: e.target_weight_kg ?? ''
+  }));
+  let deletedIds = [];
+  function renderRows(){
+    const wrap = document.getElementById('mexRowsWrap');
+    wrap.innerHTML = rows.map((r,i) => `
+      <div class="exercise-builder-row">
+        <input placeholder="שם התרגיל" data-ex="name" data-i="${i}" value="${r.name||''}">
+        <input placeholder="סטים" type="number" data-ex="sets" data-i="${i}" value="${r.sets||''}">
+        <input placeholder="חזרות" data-ex="reps" data-i="${i}" value="${r.reps||''}">
+        <input placeholder='ק"ג' type="number" step="0.5" data-ex="weight" data-i="${i}" value="${r.weight||''}">
+        <button type="button" class="icon-btn" data-lib="${i}" title="בחירה מהספרייה" style="color:var(--blue-bright);border-color:var(--blue-dim);">📚</button>
+        <button type="button" class="icon-btn" data-remove="${i}">✕</button>
+      </div>`).join('') || `<p class="muted" style="font-size:12px;">אין תרגילים עדיין - הוסיפי למטה, או טעני תבנית שמורה למעלה.</p>`;
+    wrap.querySelectorAll('[data-ex]').forEach(inp => {
+      inp.oninput = () => { rows[inp.getAttribute('data-i')][inp.getAttribute('data-ex')] = inp.value; };
+    });
+    wrap.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.getAttribute('data-remove'));
+        if(rows[idx].id) deletedIds.push(rows[idx].id);
+        rows.splice(idx,1); renderRows();
+      };
+    });
+    wrap.querySelectorAll('[data-lib]').forEach(btn => {
+      btn.onclick = () => openLibraryPicker(item => {
+        rows[parseInt(btn.getAttribute('data-lib'))].name = item.name;
+        renderRows();
+      });
+    });
+  }
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>עריכת יום ${day.day_number}</h3>
+      ${day.trainee_note ? `<div class="reminder-banner" style="margin-bottom:14px;"><span>💬 הערת המתאמן/ת: "${day.trainee_note}"</span></div>` : ''}
+      ${templatePickerHtml(templates)}
+      <div class="field"><label>כותרת היום</label><input id="mTitle" value="${(day.title||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>תיאור כללי (אופציונלי)</label><textarea id="mDesc" rows="2">${day.description||''}</textarea></div>
+      <div class="field">
+        <label>תרגילים ביום זה</label>
+        <div id="mexRowsWrap"></div>
+        <div class="day-actions-row" style="margin-top:6px;">
+          <button type="button" class="add-exercise-link" id="mAddExRow" style="flex:1;">+ הוספת תרגיל</button>
+          <button type="button" class="btn ghost small" id="mSaveTplBtn">💾 שמירה כתבנית</button>
+        </div>
+      </div>
+      <div id="mexErr" class="error hidden" style="margin-top:10px;"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="mexCancel">סגירה</button>
+        <button class="btn full" id="mexSave">שמירת שינויים</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  renderRows();
+  document.getElementById('mAddExRow').onclick = () => { rows.push({}); renderRows(); };
+  document.getElementById('mSaveTplBtn').onclick = () => saveDayAsTemplate(
+    document.getElementById('mTitle').value.trim(), document.getElementById('mDesc').value.trim(), rows
+  );
+  const tplApply = document.getElementById('tplApply');
+  if(tplApply) tplApply.onclick = () => {
+    const tid = document.getElementById('tplSelect').value;
+    const tpl = templates.find(t => t.id === tid);
+    if(!tpl) return;
+    if(rows.length && !confirm(`טעינת התבנית "${tpl.name}" תחליף את כל התרגילים הקיימים ביום זה. להמשיך?`)) return;
+    rows.forEach(r => { if(r.id) deletedIds.push(r.id); });
+    document.getElementById('mTitle').value = tpl.title || tpl.name;
+    document.getElementById('mDesc').value = tpl.description || '';
+    rows = (tpl.exercises || []).map(e => ({ name: e.name, sets: e.target_sets ?? '', reps: e.target_reps ?? '', weight: e.target_weight_kg ?? '' }));
+    renderRows();
+    showToast(`התבנית "${tpl.name}" נטענה - לחצי "שמירת שינויים" לאישור`);
+  };
+  document.getElementById('mexCancel').onclick = () => { bg.remove(); renderCoachTraineeDetail(); };
+  document.getElementById('mexSave').onclick = async () => {
+    const errEl = document.getElementById('mexErr');
+    const saveBtn = document.getElementById('mexSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'שומרת...';
+    try{
+      await rest('program_days', { method:'PATCH', query:`?id=eq.${day.id}`, body:{
+        title: document.getElementById('mTitle').value.trim(),
+        description: document.getElementById('mDesc').value.trim()
+      }});
+      for(const id of deletedIds){
+        await rest('exercises', { method:'DELETE', query:`?id=eq.${id}` });
+      }
+      const toCreate = rows.filter(r => !r.id && r.name && r.name.trim());
+      const toUpdate = rows.filter(r => r.id && r.name && r.name.trim());
+      if(toCreate.length){
+        await rest('exercises', { method:'POST', body: toCreate.map((r,i) => ({
+          day_id: day.id, order_index: i, name: r.name.trim(),
+          target_sets: r.sets ? parseInt(r.sets) : null,
+          target_reps: r.reps ? String(r.reps).trim() : null,
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+        })) });
+      }
+      for(const r of toUpdate){
+        await rest('exercises', { method:'PATCH', query:`?id=eq.${r.id}`, body:{
+          name: r.name.trim(),
+          target_sets: r.sets ? parseInt(r.sets) : null,
+          target_reps: r.reps ? String(r.reps).trim() : null,
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+        }});
+      }
+      bg.remove();
+      showToast('התרגילים נשמרו');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+      saveBtn.disabled = false; saveBtn.textContent = 'שמירת שינויים';
+    }
+  };
+}
+
+function openCreateNutritionModal(traineeId, existingPlan){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  const p = existingPlan || {};
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${existingPlan ? 'עריכת תפריט תזונה' : 'יצירת תפריט תזונה'}</h3>
+      <div class="field"><label>שם התפריט</label><input id="npTitle" value="${p.title || 'תפריט תזונה'}"></div>
+      <div class="grid cols-2">
+        <div class="field"><label>קלוריות ליום</label><input id="npCal" type="number" value="${p.daily_calories ?? ''}"></div>
+        <div class="field"><label>חלבון (גרם)</label><input id="npProt" type="number" value="${p.daily_protein_g ?? ''}"></div>
+        <div class="field"><label>פחמימות (גרם)</label><input id="npCarb" type="number" value="${p.daily_carbs_g ?? ''}"></div>
+        <div class="field"><label>שומן (גרם)</label><input id="npFat" type="number" value="${p.daily_fat_g ?? ''}"></div>
+      </div>
+      <div class="field"><label>הערות כלליות</label><textarea id="npNotes" rows="3" placeholder="לדוגמה: לשתות 3 ליטר מים ביום, להימנע מסוכר מעובד...">${p.general_notes || ''}</textarea></div>
+      <div id="npErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="npCancel">ביטול</button>
+        <button class="btn full" id="npSave">${existingPlan ? 'שמירת שינויים' : 'יצירה'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('npCancel').onclick = () => bg.remove();
+  document.getElementById('npSave').onclick = async () => {
+    const errEl = document.getElementById('npErr');
+    try{
+      const num = id => { const v = document.getElementById(id).value; return v===''?null:parseInt(v); };
+      const body = {
+        title: document.getElementById('npTitle').value.trim() || 'תפריט תזונה',
+        daily_calories: num('npCal'), daily_protein_g: num('npProt'),
+        daily_carbs_g: num('npCarb'), daily_fat_g: num('npFat'),
+        general_notes: document.getElementById('npNotes').value.trim()
+      };
+      if(existingPlan){
+        await rest('nutrition_plans', { method:'PATCH', query:`?id=eq.${existingPlan.id}`, body });
+      } else {
+        await rest('nutrition_plans', { method:'POST', body:{ ...body, trainee_id: traineeId, coach_id: PROFILE.id } });
+      }
+      bg.remove();
+      showToast(existingPlan ? 'היעדים עודכנו' : 'התפריט נוצר - עכשיו אפשר להוסיף ארוחות');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+function openAddMealModal(planId, existingMeal){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  const m = existingMeal || {};
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${existingMeal ? 'עריכת ארוחה' : 'הוספת ארוחה'}</h3>
+      <div class="field"><label>שם הארוחה</label><input id="mName" placeholder="לדוגמה: ארוחת בוקר" value="${m.name || ''}"></div>
+      <div class="grid cols-2">
+        <div class="field"><label>קלוריות (אופציונלי)</label><input id="mCal" type="number" value="${m.calories ?? ''}"></div>
+        <div class="field"><label>חלבון בגרם (אופציונלי)</label><input id="mProt" type="number" value="${m.protein_g ?? ''}"></div>
+      </div>
+      <div class="field"><label>פירוט (מזון וכמויות)</label><textarea id="mDesc" rows="4" placeholder="לדוגמה: 3 ביצים, פרוסת לחם מלא, אבוקדו...">${m.description || ''}</textarea></div>
+      <div id="mErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="mCancel">ביטול</button>
+        <button class="btn full" id="mSave">${existingMeal ? 'שמירת שינויים' : 'הוספה'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('mCancel').onclick = () => bg.remove();
+  document.getElementById('mSave').onclick = async () => {
+    const name = document.getElementById('mName').value.trim();
+    const errEl = document.getElementById('mErr');
+    if(!name){ errEl.textContent = 'נא להזין שם לארוחה.'; errEl.classList.remove('hidden'); return; }
+    try{
+      const num = id => { const v = document.getElementById(id).value; return v===''?null:parseInt(v); };
+      if(existingMeal){
+        await rest('meals', { method:'PATCH', query:`?id=eq.${existingMeal.id}`, body:{
+          name, calories: num('mCal'), protein_g: num('mProt'),
+          description: document.getElementById('mDesc').value.trim()
+        }});
+      } else {
+        const existing = await rest('meals', { query:`?plan_id=eq.${planId}&select=order_index` }) || [];
+        const nextIndex = existing.length ? Math.max(...existing.map(m=>m.order_index||0)) + 1 : 0;
+        await rest('meals', { method:'POST', body:{
+          plan_id: planId, order_index: nextIndex,
+          name, calories: num('mCal'), protein_g: num('mProt'),
+          description: document.getElementById('mDesc').value.trim()
+        }});
+      }
+      bg.remove();
+      showToast(existingMeal ? 'הארוחה עודכנה' : 'הארוחה נוספה');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+/* =====================================================================
+   מסך מתאמן
+   ===================================================================== */
+async function renderTraineeHome(){
+  const app = document.getElementById('app');
+  app.innerHTML = appShell(
+    [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    'program',
+    `<p class="muted">טוען...</p>`
+  );
+  bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+
+  let programs = [];
+  try{
+    programs = await rest('programs', { query:`?trainee_id=eq.${PROFILE.id}&select=*,program_days(*,exercises(*))&order=start_date.desc` }) || [];
+  }catch(e){ showToast(e.message, true); }
+  await getExerciseLibrary();
+
+  const program = programs[0] || null;
+  const days = program ? (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number) : [];
+  const doneCount = days.filter(d=>d.completed).length;
+  const workDaysCount = days.filter(d=>!d.is_rest_day).length;
+  const pct = workDaysCount ? Math.round(100*days.filter(d=>!d.is_rest_day && d.completed).length/workDaysCount) : 0;
+  const streak = calcStreak(days);
+
+  let lastEntryDate = null;
+  try{
+    const recent = await rest('progress_entries', { query:`?trainee_id=eq.${PROFILE.id}&select=entry_date&order=entry_date.desc&limit=1` });
+    if(recent && recent.length) lastEntryDate = new Date(recent[0].entry_date);
+  }catch(e){}
+  const daysSinceEntry = lastEntryDate ? Math.floor((Date.now()-lastEntryDate.getTime())/86400000) : null;
+  const reminderHtml = (daysSinceEntry===null || daysSinceEntry>=7) ? `
+    <div class="reminder-banner">
+      <span>📏 ${daysSinceEntry===null ? 'עדיין לא הזנת אף מדידה' : `לא הזנת מדידה כבר ${daysSinceEntry} ימים`} — כדאי לעדכן משקל והיקפים.</span>
+      <button class="btn small" id="reminderLogBtn">לרישום מדידה</button>
+    </div>` : '';
+
+  const daysLeft = program ? Math.max(0, program.duration_days - Math.floor((Date.now() - new Date(program.start_date).getTime())/86400000)) : null;
+  const todayStr = new Date().toDateString();
+  const todaysDay = program ? days.find(d => dayDate(program.start_date, d.day_number).toDateString() === todayStr) : null;
+
+  document.querySelector('.main').innerHTML = `
+    ${reminderHtml}
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:22px;">
+      <div>
+        <h2 class="page-title" style="margin-bottom:8px;">${program ? program.title : 'התוכנית שלי'}</h2>
+        ${streak>0 ? `<div class="streak-badge">🔥 ${streak} ימי רצף</div>` : `<p class="page-sub" style="margin:0;">${program ? `${doneCount} / ${days.length} ימים הושלמו` : 'המאמן שלך עדיין לא בנה עבורך תוכנית'}</p>`}
+        ${daysLeft!=null ? `<p class="muted" style="font-size:12px;margin-top:4px;">${daysLeft} ימים נשארו בתוכנית</p>` : ''}
+      </div>
+      ${program ? `<div style="display:flex;align-items:center;gap:14px;">
+        ${todaysDay && !todaysDay.is_rest_day ? `<button class="btn small" id="todayWorkoutBtn">💪 האימון של היום</button>` : ''}
+        <button class="btn ghost small" id="myBoardBtn">🗓 הלוח שלי</button>
+        <div class="ring-wrap">${progressRing(pct)}<div><div style="font-family:var(--font-mono);font-weight:800;font-size:18px;">${pct}%</div><div class="muted" style="font-size:12px;">עמידה בתוכנית</div></div></div>
+      </div>` : ''}
+    </div>
+    <div class="panel">
+      ${days.length ? days.map(d => {
+        const exs = (d.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index);
+        const lbl = program ? dayLabel(program.start_date, d.day_number) : null;
+        return `
+        <div class="day-card ${d.completed?'done':''} ${d.is_rest_day?'rest':''}" data-daycard="${d.id}">
+          <div class="day-card-head" data-toggle="${d.id}">
+            <input type="checkbox" class="day-check" data-dayid="${d.id}" ${d.completed?'checked':''} ${d.is_rest_day?'disabled':''} onclick="event.stopPropagation()">
+            <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
+            <div class="day-info">
+              <div class="t">${d.title || (d.is_rest_day?'יום מנוחה':'אימון')}</div>
+              ${d.description ? `<div class="d">${d.description}</div>` : ''}
+            </div>
+            ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : (exs.length ? `<span class="badge">${exs.length} תרגילים</span>` : '')}
+            <button class="icon-btn" data-trainee-move="${d.id}" data-daynum="${d.day_number}" title="החלפת יום" onclick="event.stopPropagation()">↕</button>
+            ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
+          </div>
+          ${!d.is_rest_day ? `<div class="day-card-body">
+            ${exs.map(ex => `
+              <div class="exercise-item ${ex.completed?'ex-done':''}" data-exid="${ex.id}">
+                <div class="ex-name">${findLibraryInstructions(ex.name) ? `<span class="info-dot" data-instr="${ex.name.replace(/"/g,'&quot;')}">i</span>` : ''}<span data-history="${ex.name.replace(/"/g,'&quot;')}" style="cursor:pointer;text-decoration:underline dotted;">${ex.name} <span style="font-size:11px;color:var(--blue-bright);">📈 היסטוריה</span></span></div>
+                <div class="ex-target">יעד: ${ex.target_sets ?? '—'} סטים × ${ex.target_reps ?? '—'} חזרות${ex.target_weight_kg!=null ? ` · ${ex.target_weight_kg} ק"ג` : ''}</div>
+                <div class="ex-log-grid">
+                  <div class="f"><label>סטים בפועל</label><input type="number" class="ex-sets" value="${ex.actual_sets ?? ''}"></div>
+                  <div class="f"><label>חזרות בפועל</label><input class="ex-reps" value="${ex.actual_reps ?? ''}"></div>
+                  <div class="f"><label>ק"ג בפועל</label><input type="number" step="0.5" class="ex-weight" value="${ex.actual_weight_kg ?? ''}"></div>
+                  <button class="btn small ex-save">${ex.completed ? '✓ עודכן' : 'שמירה'}</button>
+                </div>
+              </div>`).join('')}
+            <div style="margin-top:12px;">
+              <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">הערה/שאלה למאמן על היום הזה</label>
+              <textarea class="trainee-note-input" data-noteday="${d.id}" rows="2" placeholder="לדוגמה: הרגשתי כאב בברך בסקוואט...">${d.trainee_note || ''}</textarea>
+              <button class="btn ghost small note-save-btn" data-noteday="${d.id}" style="margin-top:6px;">שמירת הערה</button>
+            </div>
+          </div>` : ''}
+        </div>`;
+      }).join('') : `<div class="empty">${logoSVG(46)}<div>אין עדיין תוכנית פעילה</div></div>`}
+    </div>
+  `;
+
+  const reminderBtn = document.getElementById('reminderLogBtn');
+  if(reminderBtn) reminderBtn.onclick = renderTraineeProgress;
+  const myBoardBtn = document.getElementById('myBoardBtn');
+  if(myBoardBtn) myBoardBtn.onclick = () => openAdherenceBoardModal(program, renderTraineeHome);
+  const todayBtn = document.getElementById('todayWorkoutBtn');
+  if(todayBtn && todaysDay){
+    todayBtn.onclick = () => {
+      const card = document.querySelector(`[data-daycard="${todaysDay.id}"]`);
+      if(card){
+        card.classList.add('expanded');
+        card.scrollIntoView({ behavior:'smooth', block:'center' });
+        card.style.outline = '2px solid var(--blue-bright)';
+        setTimeout(()=>{ card.style.outline = ''; }, 2000);
+      }
+    };
+  }
+
+  document.querySelectorAll('[data-toggle]').forEach(head => {
+    head.onclick = () => {
+      const card = document.querySelector(`[data-daycard="${head.getAttribute('data-toggle')}"]`);
+      if(card && card.querySelector('.day-card-body')) card.classList.toggle('expanded');
+    };
+  });
+
+  document.querySelectorAll('[data-trainee-move]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const dayId = btn.getAttribute('data-trainee-move');
+      const currentNum = parseInt(btn.getAttribute('data-daynum'));
+      openMoveDayModal(dayId, currentNum, program, renderTraineeHome);
+    };
+  });
+
+  document.querySelectorAll('[data-history]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      openExerciseHistoryModal(el.getAttribute('data-history'), days, program ? program.start_date : null);
+    };
+  });
+
+  document.querySelectorAll('[data-instr]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      const instr = findLibraryInstructions(el.getAttribute('data-instr'));
+      const bg = document.createElement('div');
+      bg.className = 'modal-bg';
+      bg.innerHTML = `<div class="modal"><h3>${el.getAttribute('data-instr')}</h3><p style="font-size:13px;color:var(--muted);line-height:1.7;">${instr}</p><div class="modal-actions"><button class="btn full" id="instrClose">סגירה</button></div></div>`;
+      document.body.appendChild(bg);
+      document.getElementById('instrClose').onclick = () => bg.remove();
+      bg.onclick = (e2) => { if(e2.target === bg) bg.remove(); };
+    };
+  });
+
+  document.querySelectorAll('.note-save-btn').forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const dayId = btn.getAttribute('data-noteday');
+      const textarea = document.querySelector(`.trainee-note-input[data-noteday="${dayId}"]`);
+      try{
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${dayId}`, body:{ trainee_note: textarea.value.trim() } });
+        showToast('ההערה נשמרה - המאמן/ת יראה אותה');
+      }catch(e){ showToast(e.message, true); }
+    };
+  });
+
+  document.querySelectorAll('.exercise-item').forEach(item => {
+    const saveBtn = item.querySelector('.ex-save');
+    saveBtn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const exId = item.getAttribute('data-exid');
+      const sets = item.querySelector('.ex-sets').value;
+      const reps = item.querySelector('.ex-reps').value;
+      const weight = item.querySelector('.ex-weight').value;
+      try{
+        await rest('exercises', { method:'PATCH', query:`?id=eq.${exId}`, body:{
+          actual_sets: sets===''?null:parseInt(sets),
+          actual_reps: reps===''?null:reps,
+          actual_weight_kg: weight===''?null:parseFloat(weight),
+          completed: true
+        }});
+        item.classList.add('ex-done');
+        saveBtn.textContent = '✓ עודכן';
+        showToast('התרגיל נשמר');
+      }catch(e){ showToast(e.message, true); }
+    };
+  });
+
+  document.querySelectorAll('.day-check').forEach(cb => {
+    cb.onchange = async () => {
+      try{
+        await rest('program_days', {
+          method:'PATCH',
+          query:`?id=eq.${cb.getAttribute('data-dayid')}`,
+          body:{ completed: cb.checked, completed_at: cb.checked ? new Date().toISOString() : null }
+        });
+        showToast(cb.checked ? randomMotivation() : 'הסימון בוטל');
+        cb.closest('.day-row').classList.toggle('done', cb.checked);
+      }catch(e){ showToast(e.message, true); cb.checked = !cb.checked; }
+    };
+  });
+}
+
+async function renderTraineeNutrition(){
+  const app = document.getElementById('app');
+  app.innerHTML = appShell(
+    [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    'nutrition',
+    `<p class="muted">טוען...</p>`
+  );
+  bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+
+  let plans = [];
+  try{
+    plans = await rest('nutrition_plans', { query:`?trainee_id=eq.${PROFILE.id}&select=*,meals(*)&order=created_at.desc` }) || [];
+  }catch(e){ showToast(e.message, true); }
+
+  const plan = plans[0] || null;
+  const meals = plan ? (plan.meals || []).slice().sort((a,b)=>a.order_index-b.order_index) : [];
+
+  document.querySelector('.main').innerHTML = `
+    <h2 class="page-title">${plan ? plan.title : 'התפריט שלי'}</h2>
+    <p class="page-sub">${plan ? 'תפריט התזונה שהמאמן שלך בנה עבורך' : 'המאמן שלך עדיין לא בנה עבורך תפריט'}</p>
+    ${plan ? `
+      <div class="macro-grid" style="margin-bottom:18px;">
+        <div class="macro-box"><div class="v">${plan.daily_calories ?? '—'}</div><div class="l">קלוריות ליום</div></div>
+        <div class="macro-box"><div class="v">${plan.daily_protein_g ?? '—'}</div><div class="l">חלבון (גרם)</div></div>
+        <div class="macro-box"><div class="v">${plan.daily_carbs_g ?? '—'}</div><div class="l">פחמימות (גרם)</div></div>
+        <div class="macro-box"><div class="v">${plan.daily_fat_g ?? '—'}</div><div class="l">שומן (גרם)</div></div>
+      </div>
+      ${plan.general_notes ? `<div class="panel" style="margin-bottom:16px;"><h3>הערות כלליות</h3><div style="font-size:13px;color:var(--muted);white-space:pre-wrap;">${plan.general_notes}</div></div>` : ''}
+      <div class="panel">
+        <h3>ארוחות</h3>
+        ${meals.length ? meals.map(m => `
+          <div class="meal-card">
+            <div class="meal-head">
+              <div class="meal-name">${m.name}</div>
+              ${(m.calories || m.protein_g) ? `<div class="meal-macros">${m.calories ? m.calories+' קק"ל' : ''}${m.calories && m.protein_g ? ' · ' : ''}${m.protein_g ? m.protein_g+'g חלבון' : ''}</div>` : ''}
+            </div>
+            ${m.description ? `<div class="meal-desc">${m.description}</div>` : ''}
+          </div>`).join('') : `<div class="empty">עדיין לא נוספו ארוחות לתפריט</div>`}
+      </div>
+    ` : `<div class="panel"><div class="empty">${logoSVG(46)}<div>המאמן שלך יבנה עבורך תפריט תזונה בקרוב</div></div></div>`}
+  `;
+}
+
+async function renderTraineeProgress(){
+  const app = document.getElementById('app');
+  app.innerHTML = appShell(
+    [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    'progress',
+    `<p class="muted">טוען...</p>`
+  );
+  bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+
+  let entries = [];
+  try{
+    entries = await rest('progress_entries', { query:`?trainee_id=eq.${PROFILE.id}&select=*&order=entry_date.asc` }) || [];
+  }catch(e){ showToast(e.message, true); }
+
+  const goalWeight = PROFILE.goal_weight_kg;
+  const weightEntries = entries.filter(p=>p.weight_kg!=null);
+  const chartPoints = weightEntries.map((p,i)=>({x:i,y:parseFloat(p.weight_kg)}));
+  const photoEntries = entries.filter(p=>p.photo_url);
+  const firstPhoto = photoEntries[0];
+  const lastPhoto = photoEntries[photoEntries.length-1];
+
+  const badges = [];
+  if(entries.length >= 1) badges.push({icon:'🎯', label:'מדידה ראשונה'});
+  if(entries.length >= 5) badges.push({icon:'📏', label:'5+ מדידות'});
+  if(entries.length >= 10) badges.push({icon:'📊', label:'10+ מדידות'});
+  if(weightEntries.length >= 2){
+    const diff = weightEntries[0].weight_kg - weightEntries[weightEntries.length-1].weight_kg;
+    if(diff >= 1) badges.push({icon:'⚖️', label:`ירידה של ${diff.toFixed(1)} ק"ג`});
+    if(diff >= 5) badges.push({icon:'🏆', label:'ירידה של 5+ ק"ג'});
+  }
+  if(entries.length >= 2){
+    const spanDays = Math.floor((new Date(entries[entries.length-1].entry_date) - new Date(entries[0].entry_date))/86400000);
+    if(spanDays >= 30) badges.push({icon:'🗓', label:'חודש של מעקב'});
+    if(spanDays >= 90) badges.push({icon:'🌟', label:'3 חודשים של מעקב'});
+  }
+  if(photoEntries.length >= 2) badges.push({icon:'📸', label:'מעקב עם תמונות'});
+  if(goalWeight!=null && weightEntries.length && Math.abs(weightEntries[weightEntries.length-1].weight_kg - goalWeight) < 0.5) badges.push({icon:'🎉', label:'הגעת ליעד!'});
+
+  const measureOptions = [
+    {key:'weight_kg', label:'משקל (ק"ג)'}, {key:'chest_cm', label:'חזה (ס"מ)'}, {key:'waist_cm', label:'מותן (ס"מ)'},
+    {key:'hips_cm', label:'ירכיים (ס"מ)'}, {key:'arm_cm', label:'זרוע (ס"מ)'}, {key:'thigh_cm', label:'ירך (ס"מ)'}
+  ];
+
+  document.querySelector('.main').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;">
+      <div>
+        <h2 class="page-title">ההתקדמות שלי</h2>
+        <p class="page-sub">משקל והיקפים לאורך זמן</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn ghost small" id="exportBtn">⬇ ייצוא CSV</button>
+        <button class="btn" id="logBtn">+ רישום מדידה</button>
+      </div>
+    </div>
+
+    ${badges.length ? `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>הישגים</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${badges.map(b => `<div class="streak-badge" style="background:var(--bg-elevated);color:var(--white);border:1px solid var(--border);">${b.icon} ${b.label}</div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    ${(firstPhoto && lastPhoto && firstPhoto.id !== lastPhoto.id) ? `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>לפני / אחרי</h3>
+      <div class="grid cols-2">
+        <div>
+          <img src="${firstPhoto.photo_url}" style="width:100%;border-radius:10px;border:1px solid var(--border);">
+          <div class="muted" style="font-size:12px;margin-top:6px;text-align:center;">${new Date(firstPhoto.entry_date).toLocaleDateString('he-IL')}${firstPhoto.weight_kg?` · ${firstPhoto.weight_kg} ק"ג`:''}</div>
+        </div>
+        <div>
+          <img src="${lastPhoto.photo_url}" style="width:100%;border-radius:10px;border:1px solid var(--border);">
+          <div class="muted" style="font-size:12px;margin-top:6px;text-align:center;">${new Date(lastPhoto.entry_date).toLocaleDateString('he-IL')}${lastPhoto.weight_kg?` · ${lastPhoto.weight_kg} ק"ג`:''}</div>
+        </div>
+      </div>
+    </div>` : ''}
+
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>יעד משקל</h3>
+      <div style="display:flex;justify-content:flex-end;margin-top:-30px;"><button class="linklike" id="editGoalBtn">${goalWeight!=null ? 'עריכה' : '+ הגדרת יעד'}</button></div>
+      <div style="font-family:var(--font-mono);font-size:22px;font-weight:800;margin-top:8px;">
+        ${goalWeight!=null ? `${goalWeight} ק"ג` : `<span class="muted" style="font-size:13px;font-weight:600;">לא הוגדר יעד עדיין</span>`}
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">מגמה</h3>
+        <select id="measureSelect" style="width:auto;padding:6px 10px;font-size:12px;">
+          ${measureOptions.map(m => `<option value="${m.key}">${m.label}</option>`).join('')}
+        </select>
+      </div>
+      <div id="measureChart" style="margin-top:10px;">${svgLineChart(chartPoints, 560, 160, goalWeight)}</div>
+    </div>
+
+    <div class="panel">
+      <h3>היסטוריה</h3>
+      ${entries.length ? `<table>
+        <tr><th></th><th>תאריך</th><th>משקל</th><th>חזה</th><th>מותן</th><th>ירכיים</th><th>זרוע</th><th>ירך</th></tr>
+        ${entries.slice().reverse().map(p => `<tr>
+          <td>${p.photo_url ? `<img class="photo-thumb" src="${p.photo_url}" data-full="${p.photo_url}">` : ''}</td>
+          <td>${new Date(p.entry_date).toLocaleDateString('he-IL')}</td>
+          <td>${p.weight_kg ?? '-'}</td><td>${p.chest_cm ?? '-'}</td><td>${p.waist_cm ?? '-'}</td>
+          <td>${p.hips_cm ?? '-'}</td><td>${p.arm_cm ?? '-'}</td><td>${p.thigh_cm ?? '-'}</td>
+        </tr>`).join('')}
+      </table>` : `<div class="empty">עדיין לא הזנת מדידות. לחצי על "רישום מדידה" כדי להתחיל.</div>`}
+    </div>
+  `;
+  document.getElementById('measureSelect').onchange = (ev) => {
+    const key = ev.target.value;
+    const pts = entries.filter(p=>p[key]!=null).map((p,i)=>({x:i,y:parseFloat(p[key])}));
+    document.getElementById('measureChart').innerHTML = svgLineChart(pts, 560, 160, key==='weight_kg'?goalWeight:null);
+  };
+  document.getElementById('logBtn').onclick = openLogProgressModal;
+  document.getElementById('editGoalBtn').onclick = openGoalModal;
+  document.getElementById('exportBtn').onclick = () => {
+    if(!entries.length){ showToast('אין נתונים לייצוא', true); return; }
+    exportCSV(`motion-progress-${PROFILE.full_name}.csv`,
+      ['תאריך','משקל','חזה','מותן','ירכיים','זרוע','ירך','הערות'],
+      entries.map(p => [new Date(p.entry_date).toLocaleDateString('he-IL'), p.weight_kg, p.chest_cm, p.waist_cm, p.hips_cm, p.arm_cm, p.thigh_cm, p.notes])
+    );
+  };
+  document.querySelectorAll('.photo-thumb').forEach(img => {
+    img.onclick = () => {
+      const lb = document.createElement('div');
+      lb.className = 'lightbox-bg';
+      lb.innerHTML = `<img src="${img.getAttribute('data-full')}">`;
+      lb.onclick = () => lb.remove();
+      document.body.appendChild(lb);
+    };
+  });
+}
+
+function openGoalModal(){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>הגדרת יעד משקל</h3>
+      <div class="field"><label>משקל יעד (ק"ג)</label><input id="gWeight" type="number" step="0.1" value="${PROFILE.goal_weight_kg ?? ''}"></div>
+      <div id="gErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="gCancel">ביטול</button>
+        <button class="btn full" id="gSave">שמירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('gCancel').onclick = () => bg.remove();
+  document.getElementById('gSave').onclick = async () => {
+    const v = document.getElementById('gWeight').value;
+    try{
+      await rest('profiles', { method:'PATCH', query:`?id=eq.${PROFILE.id}`, body:{ goal_weight_kg: v===''?null:parseFloat(v) } });
+      PROFILE.goal_weight_kg = v===''?null:parseFloat(v);
+      bg.remove();
+      showToast('היעד נשמר');
+      renderTraineeProgress();
+    }catch(e){
+      document.getElementById('gErr').textContent = e.message;
+      document.getElementById('gErr').classList.remove('hidden');
+    }
+  };
+}
+
+async function openLogProgressModal(){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  let last = null;
+  try{
+    const rows = await rest('progress_entries', { query:`?trainee_id=eq.${PROFILE.id}&select=*&order=entry_date.desc&limit=1` });
+    last = rows && rows[0];
+  }catch(e){}
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>רישום מדידה חדשה</h3>
+      ${last ? `<p class="muted" style="font-size:12px;margin-top:-8px;">מולא אוטומטית מהמדידה הקודמת - עדכני רק מה שהשתנה</p>` : ''}
+      <div class="field"><label>תאריך</label><input id="eDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="grid cols-2">
+        <div class="field"><label>משקל (ק"ג)</label><input id="eWeight" type="number" step="0.1" value="${last?.weight_kg ?? ''}"></div>
+        <div class="field"><label>חזה (ס"מ)</label><input id="eChest" type="number" step="0.1" value="${last?.chest_cm ?? ''}"></div>
+        <div class="field"><label>מותן (ס"מ)</label><input id="eWaist" type="number" step="0.1" value="${last?.waist_cm ?? ''}"></div>
+        <div class="field"><label>ירכיים (ס"מ)</label><input id="eHips" type="number" step="0.1" value="${last?.hips_cm ?? ''}"></div>
+        <div class="field"><label>זרוע (ס"מ)</label><input id="eArm" type="number" step="0.1" value="${last?.arm_cm ?? ''}"></div>
+        <div class="field"><label>ירך (ס"מ)</label><input id="eThigh" type="number" step="0.1" value="${last?.thigh_cm ?? ''}"></div>
+      </div>
+      <div class="field"><label>הערות</label><textarea id="eNotes" rows="2"></textarea></div>
+      <div class="field">
+        <label>תמונת התקדמות (אופציונלי)</label>
+        <input id="ePhoto" type="file" accept="image/*">
+        <img id="ePhotoPreview" class="photo-preview">
+      </div>
+      <div id="eErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="eCancel">ביטול</button>
+        <button class="btn full" id="eSave">שמירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('eCancel').onclick = () => bg.remove();
+  document.getElementById('ePhoto').onchange = (ev) => {
+    const file = ev.target.files[0];
+    const preview = document.getElementById('ePhotoPreview');
+    if(file){ preview.src = URL.createObjectURL(file); preview.style.display = 'block'; }
+    else{ preview.style.display = 'none'; }
+  };
+  document.getElementById('eSave').onclick = async () => {
+    const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+    const saveBtn = document.getElementById('eSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'שומרת...';
+    try{
+      let photo_url = null;
+      const file = document.getElementById('ePhoto').files[0];
+      if(file) photo_url = await uploadPhoto(file, PROFILE.id);
+      await rest('progress_entries', { method:'POST', body:{
+        trainee_id: PROFILE.id,
+        entry_date: document.getElementById('eDate').value,
+        weight_kg: num('eWeight'), chest_cm: num('eChest'), waist_cm: num('eWaist'),
+        hips_cm: num('eHips'), arm_cm: num('eArm'), thigh_cm: num('eThigh'),
+        notes: document.getElementById('eNotes').value.trim(),
+        photo_url
+      }});
+      bg.remove();
+      showToast('המדידה נשמרה');
+      renderTraineeProgress();
+    }catch(e){
+      document.getElementById('eErr').textContent = e.message;
+      document.getElementById('eErr').classList.remove('hidden');
+      saveBtn.disabled = false; saveBtn.textContent = 'שמירה';
+    }
+  };
+}
+
+/* =====================================================================
+   ראוטר ראשי
+   ===================================================================== */
+function render(){
+  if(STATE.view === 'config') return renderConfig();
+  if(STATE.view === 'auth') return renderAuth();
+  if(STATE.view === 'coach') return renderCoachHome();
+  if(STATE.view === 'trainee') return renderTraineeHome();
+}
+
+(async function boot(){
+  document.getElementById('app').innerHTML = `<div class="centerscreen">${motionMark(38,true)}</div>`;
+  const sessRaw = (function(){ try{ return localStorage.getItem('motion_session'); }catch(e){ return null; } })();
+  STATE.view = 'auth';
+  if(sessRaw){
+    const restored = await tryRestoreSession();
+    if(!restored) STATE.view = 'auth';
+  }
+  render();
+})();
+</script>
+</body>
+</html>
