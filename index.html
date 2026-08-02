@@ -267,6 +267,49 @@
   .tpl-row{display:flex;gap:8px;margin-bottom:12px;}
   .tpl-row select{flex:1;}
   .day-actions-row{display:flex;gap:6px;flex-wrap:wrap;}
+
+  /* ---------- v15: mobile UX polish ---------- */
+  @media (max-width:820px){
+    .btn{padding:13px 18px;font-size:15px;}
+    .btn.small{padding:10px 14px;font-size:13px;}
+    .icon-btn{width:42px;height:42px;font-size:18px;}
+    .day-check{width:24px;height:24px;}
+    input, select, textarea{font-size:16px !important;} /* מונע זום אוטומטי באייפון בפוקוס */
+    .modal{padding:20px;border-radius:16px 16px 0 0;}
+    .modal-bg{align-items:flex-end;padding:0;}
+    .modal{max-height:85vh;}
+  }
+
+  .skeleton{background:linear-gradient(90deg, var(--bg-elevated) 25%, var(--border) 50%, var(--bg-elevated) 75%);background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite;border-radius:8px;}
+  @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+  .skel-row{height:58px;margin-bottom:8px;}
+  .skel-line{height:14px;margin-bottom:8px;width:60%;}
+  .skel-block{height:100px;margin-bottom:16px;}
+
+  .search-input{width:100%;padding:11px 14px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:9px;color:var(--white);font-size:14px;margin-bottom:14px;}
+  .search-input:focus{outline:none;border-color:var(--blue);}
+
+  .swipe-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-left:16px;background:linear-gradient(to left, var(--green), transparent);border-radius:10px;opacity:0;pointer-events:none;transition:opacity .1s ease;color:#04170f;font-weight:800;font-size:13px;}
+  .day-card{position:relative;overflow:hidden;transition:transform .15s ease;}
+
+  /* ---------- v16: rest timer, quick-fill, readability ---------- */
+  .exercise-item .ex-name{font-size:15px;}
+  .exercise-item .ex-target{font-size:12.5px;}
+  .today-badge{background:var(--blue);color:#fff;font-size:10px;padding:2px 9px;border-radius:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;}
+  .day-card.is-today{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue);}
+
+  .same-last-btn{background:none;border:1px dashed var(--blue-dim);color:var(--blue-bright);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:8px;}
+  .same-last-btn:hover{border-color:var(--blue);}
+
+  .rest-timer-bar{
+    position:fixed;bottom:0;right:0;left:0;background:var(--bg-card);border-top:2px solid var(--blue);
+    padding:14px 18px calc(14px + env(safe-area-inset-bottom));z-index:80;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 -8px 24px rgba(0,0,0,0.4);
+    animation:fadeUp .25s ease both;
+  }
+  .rest-timer-bar .rt-count{font-family:var(--font-mono);font-size:28px;font-weight:800;color:var(--blue-bright);min-width:64px;}
+  .rest-timer-bar .rt-label{font-size:12px;color:var(--muted);}
+  .rest-timer-bar .rt-actions{display:flex;gap:8px;}
 </style>
 </head>
 <body>
@@ -293,12 +336,39 @@ function saveLocal(){
 function clearLocal(){
   try{ localStorage.removeItem('motion_session'); }catch(e){}
 }
+async function refreshAccessToken(){
+  if(!SESSION || !SESSION.refresh_token) return false;
+  try{
+    const res = await fetch(`${CONFIG.url}/auth/v1/token?grant_type=refresh_token`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey': CONFIG.anonKey },
+      body: JSON.stringify({ refresh_token: SESSION.refresh_token })
+    });
+    if(!res.ok) return false;
+    const data = await res.json();
+    if(!data.access_token) return false;
+    SESSION = { access_token: data.access_token, refresh_token: data.refresh_token || SESSION.refresh_token, user: data.user || SESSION.user };
+    saveLocal();
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
 async function tryRestoreSession(){
   try{
     const sessRaw = localStorage.getItem('motion_session');
     if(!sessRaw) return false;
     SESSION = JSON.parse(sessRaw);
-    const rows = await rest('profiles', { query:`?id=eq.${SESSION.user.id}&select=*` });
+    let rows;
+    try{
+      rows = await rest('profiles', { query:`?id=eq.${SESSION.user.id}&select=*` });
+    }catch(innerErr){
+      // ה-access token כנראה פג תוקף (בד"כ אחרי שעה) - ננסה לרענן אותו עם ה-refresh token ולנסות שוב
+      const refreshed = await refreshAccessToken();
+      if(!refreshed) throw innerErr;
+      rows = await rest('profiles', { query:`?id=eq.${SESSION.user.id}&select=*` });
+    }
     if(!rows || !rows.length) throw new Error('no profile');
     PROFILE = rows[0];
     STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
@@ -335,13 +405,17 @@ async function authRequest(path, body){
   return data;
 }
 
-async function rest(table, { method='GET', query='', body=null, token=null, prefer=null } = {}){
+async function rest(table, { method='GET', query='', body=null, token=null, prefer=null, _retried=false } = {}){
   const headers = { 'Content-Type':'application/json', 'apikey': CONFIG.anonKey };
   headers['Authorization'] = 'Bearer ' + (token || (SESSION && SESSION.access_token) || CONFIG.anonKey);
   if(prefer) headers['Prefer'] = prefer;
   const res = await fetch(`${CONFIG.url}/rest/v1/${table}${query}`, {
     method, headers, body: body ? JSON.stringify(body) : undefined
   });
+  if(res.status === 401 && !token && !_retried && SESSION && SESSION.refresh_token){
+    const refreshed = await refreshAccessToken();
+    if(refreshed) return rest(table, { method, query, body, prefer, _retried:true });
+  }
   if(!res.ok){
     const errText = await res.text().catch(()=> '');
     throw new Error(`שגיאת שרת (${table}): ${errText || res.status}`);
@@ -532,6 +606,57 @@ function exportCSV(filename, headers, rows){
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
 
+let REST_TIMER_INTERVAL = null;
+function startRestTimer(seconds){
+  stopRestTimer();
+  let remaining = seconds;
+  const bar = document.createElement('div');
+  bar.className = 'rest-timer-bar';
+  bar.id = 'restTimerBar';
+  bar.innerHTML = `
+    <div>
+      <div class="rt-label">⏱ מנוחה בין סטים</div>
+      <div class="rt-count" id="rtCount">${remaining}</div>
+    </div>
+    <div class="rt-actions">
+      <button class="btn ghost small" id="rtAdd30">+30 שנ׳</button>
+      <button class="btn small" id="rtSkip">דילוג</button>
+    </div>`;
+  document.body.appendChild(bar);
+  document.getElementById('rtAdd30').onclick = () => { remaining += 30; document.getElementById('rtCount').textContent = remaining; };
+  document.getElementById('rtSkip').onclick = () => stopRestTimer();
+  REST_TIMER_INTERVAL = setInterval(() => {
+    remaining--;
+    const el = document.getElementById('rtCount');
+    if(el) el.textContent = remaining;
+    if(remaining <= 0){
+      showToast('⏱ זמן המנוחה נגמר - לחזרה הבאה!');
+      stopRestTimer();
+    }
+  }, 1000);
+}
+function stopRestTimer(){
+  if(REST_TIMER_INTERVAL) clearInterval(REST_TIMER_INTERVAL);
+  REST_TIMER_INTERVAL = null;
+  const bar = document.getElementById('restTimerBar');
+  if(bar) bar.remove();
+}
+
+function findLastLoggedValues(exerciseName, allDays, beforeDayNumber){
+  const norm = s => (s||'').trim().toLowerCase();
+  const matches = [];
+  allDays.forEach(d => {
+    if(d.day_number >= beforeDayNumber) return;
+    (d.exercises || []).forEach(ex => {
+      if(norm(ex.name) === norm(exerciseName) && (ex.actual_weight_kg!=null || ex.actual_reps!=null || ex.actual_sets!=null)){
+        matches.push({ day_number: d.day_number, sets: ex.actual_sets, reps: ex.actual_reps, weight: ex.actual_weight_kg });
+      }
+    });
+  });
+  matches.sort((a,b)=>b.day_number-a.day_number);
+  return matches[0] || null;
+}
+
 function calcStreak(days){
   // רצף ימי אימון: סופרת אחורה מהיום המספרי הגבוה ביותר שסומן/חלף, ימי מנוחה לא שוברים רצף
   const sorted = days.slice().sort((a,b)=>b.day_number-a.day_number);
@@ -597,6 +722,29 @@ function dayDate(startDateStr, dayNumber){
 function dayLabel(startDateStr, dayNumber){
   const d = dayDate(startDateStr, dayNumber);
   return { weekday: HEBREW_WEEKDAYS[d.getDay()], dateStr: d.toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'}), fullDate: d.toLocaleDateString('he-IL'), dateObj: d };
+}
+
+function openVideoModal(url){
+  const bg = document.createElement('div');
+  bg.className = 'video-modal-bg';
+  let inner = '';
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{6,})/);
+  const vimeo = url.match(/vimeo\.com\/(\d+)/);
+  if(yt){
+    inner = `<iframe src="https://www.youtube.com/embed/${yt[1]}?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  } else if(vimeo){
+    inner = `<iframe src="https://player.vimeo.com/video/${vimeo[1]}?autoplay=1" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+  } else if(/\.(mp4|webm|mov|ogg)(\?|$)/i.test(url)){
+    inner = `<video src="${url}" controls autoplay playsinline></video>`;
+  } else {
+    bg.innerHTML = `<div class="video-modal-fallback"><p style="margin-bottom:14px;">לא הצלחנו להטמיע תצוגה מקדימה לקישור הזה.</p><a href="${url}" target="_blank" rel="noopener" class="btn">פתיחה בטאב חדש ↗</a></div>`;
+    document.body.appendChild(bg);
+    bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+    return;
+  }
+  bg.innerHTML = `<div class="video-modal-inner">${inner}</div>`;
+  document.body.appendChild(bg);
+  bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
 }
 
 function progressRing(pct, size){
@@ -692,28 +840,11 @@ function renderAuth(){
         <label>סיסמה</label>
         <input id="authPass" type="password" placeholder="••••••••">
       </div>
-      <div id="signupNameField" class="field hidden">
-        <label>שם מלא</label>
-        <input id="authName" placeholder="ישראל ישראלי">
-      </div>
       <div id="authErr" class="error hidden"></div>
       <button class="btn full" id="authSubmit">התחבר/י</button>
-      <div style="text-align:center;margin-top:16px;">
-        <button class="linklike" id="toggleMode">מאמנ/ת חדש/ה? צרי חשבון מאמן</button>
-      </div>
       <div class="hint">מתאמנים אינם נרשמים עצמאית — המאמן יוצר עבורם משתמש וסיסמה מתוך לוח הבקרה.</div>
     </div>
   </div>`;
-
-  let mode = 'login';
-  const toggle = document.getElementById('toggleMode');
-  toggle.onclick = () => {
-    mode = mode === 'login' ? 'signup' : 'login';
-    document.getElementById('authTitle').textContent = mode === 'login' ? 'התחברות' : 'הרשמת מאמן חדש';
-    document.getElementById('authSubmit').textContent = mode === 'login' ? 'התחבר/י' : 'צור/י חשבון';
-    document.getElementById('signupNameField').classList.toggle('hidden', mode === 'login');
-    toggle.textContent = mode === 'login' ? 'מאמנ/ת חדש/ה? צרי חשבון מאמן' : 'כבר יש לך חשבון? התחברי';
-  };
 
   document.getElementById('authSubmit').onclick = async () => {
     const email = document.getElementById('authEmail').value.trim();
@@ -722,33 +853,14 @@ function renderAuth(){
     errEl.classList.add('hidden');
     if(!email || !password){ errEl.textContent = 'נא למלא אימייל וסיסמה.'; errEl.classList.remove('hidden'); return; }
     try{
-      if(mode === 'signup'){
-        const fullName = document.getElementById('authName').value.trim() || 'מאמן';
-        const data = await authRequest('signup', { email, password });
-        const uid = data.user ? data.user.id : (data.id || null);
-        SESSION = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user || { id: uid, email } };
-        if(!SESSION.access_token){
-          // אימות מייל דלוק בפרויקט — התחברי ידנית אחרי אישור, או כבי Confirm email בהגדרות
-          errEl.textContent = 'החשבון נוצר, אך נדרש אימות מייל. כבי את "Confirm email" בהגדרות Supabase כדי לאפשר כניסה מיידית, ואז התחברי.';
-          errEl.classList.remove('hidden');
-          mode = 'login'; toggle.click(); toggle.click();
-          return;
-        }
-        await rest('profiles', { method:'POST', body:{ id: uid, role:'coach', full_name: fullName }, token: SESSION.access_token, prefer:'return=representation' });
-        PROFILE = { id: uid, role:'coach', full_name: fullName, coach_id: null };
-        saveLocal();
-        STATE.view = 'coach';
-        render();
-      } else {
-        const data = await authRequest('token?grant_type=password', { email, password });
-        SESSION = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user };
-        const rows = await rest('profiles', { query:`?id=eq.${data.user.id}&select=*` });
-        if(!rows || !rows.length) throw new Error('לא נמצא פרופיל למשתמש זה.');
-        PROFILE = rows[0];
-        saveLocal();
-        STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
-        render();
-      }
+      const data = await authRequest('token?grant_type=password', { email, password });
+      SESSION = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user };
+      const rows = await rest('profiles', { query:`?id=eq.${data.user.id}&select=*` });
+      if(!rows || !rows.length) throw new Error('לא נמצא פרופיל למשתמש זה.');
+      PROFILE = rows[0];
+      saveLocal();
+      STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
+      render();
     }catch(e){
       errEl.textContent = e.message;
       errEl.classList.remove('hidden');
@@ -785,6 +897,7 @@ function appShell(navItems, activeKey, contentHtml){
 function bindShellNav(handlers){
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.onclick = () => {
+      stopRestTimer();
       const key = el.getAttribute('data-nav');
       if(key === 'logout'){
         SESSION = null; PROFILE = null; STATE = { view:'auth', activeTraineeId:null, traineeCache:{} };
@@ -805,7 +918,7 @@ async function renderCoachHome(){
   app.innerHTML = appShell(
     [{key:'home', label:'👥 המתאמנים שלי'}],
     'home',
-    `<div class="panel"><p class="muted">טוען...</p></div>`
+    `<div class="panel"><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div></div>`
   );
   bindShellNav({ home: renderCoachHome });
 
@@ -863,8 +976,20 @@ async function renderCoachHome(){
       </div>
       <button class="btn" id="addTraineeBtn">+ הוספת מתאמן</button>
     </div>
-    <div class="panel">${rowsHtml}</div>
+    ${trainees.length > 4 ? `<input class="search-input" id="traineeSearch" placeholder="🔍 חיפוש מתאמן לפי שם...">` : ''}
+    <div class="panel" id="traineesPanel">${rowsHtml}</div>
   `;
+
+  const searchInput = document.getElementById('traineeSearch');
+  if(searchInput){
+    searchInput.oninput = () => {
+      const q = searchInput.value.trim().toLowerCase();
+      document.querySelectorAll('.trainee-row').forEach(row => {
+        const name = (row.querySelector('.name')?.textContent || '').toLowerCase();
+        row.style.display = !q || name.includes(q) ? '' : 'none';
+      });
+    };
+  }
 
   document.getElementById('addTraineeBtn').onclick = openAddTraineeModal;
   document.querySelectorAll('[data-tid]').forEach(el => {
@@ -1149,7 +1274,7 @@ async function renderCoachTraineeDetail(){
   const app = document.getElementById('app');
   app.innerHTML = appShell(
     [{key:'home', label:'👥 המתאמנים שלי'}], 'home',
-    `<p class="muted">טוען פרטי מתאמן...</p>`
+    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
   bindShellNav({ home: renderCoachHome });
 
@@ -1165,7 +1290,8 @@ async function renderCoachTraineeDetail(){
   const nutritionPlan = nutritionPlans[0] || null;
   const mealsList = nutritionPlan ? (nutritionPlan.meals || []).slice().sort((a,b)=>a.order_index-b.order_index) : [];
 
-  const program = programs[0] || null;
+  let program = programs[0] || null;
+  if(program) program = await autoExtendProgramIfNeeded(program);
   const lastWeight = progress.length ? progress[progress.length-1].weight_kg : null;
   const firstWeight = progress.length ? progress[0].weight_kg : null;
   const delta = (lastWeight!=null && firstWeight!=null) ? (lastWeight - firstWeight).toFixed(1) : null;
@@ -1479,10 +1605,46 @@ const PROGRAM_TEMPLATES = {
   }
 };
 
-function openCreateProgramModal(traineeId){
+async function autoExtendProgramIfNeeded(program){
+  if(!program || !program.week_pattern || !program.week_pattern.length) return program;
+  const week = program.week_pattern;
+  const days = program.program_days || [];
+  const existingMax = days.length ? Math.max(...days.map(d=>d.day_number)) : 0;
+  const daysSinceStart = Math.floor((Date.now() - new Date(program.start_date).getTime())/86400000) + 1;
+  const target = Math.min(program.duration_days, Math.max(daysSinceStart + 7, 7)); // תמיד שומרת שבוע קדימה כמלאי
+  if(target <= existingMax) return program;
+  const newDays = [];
+  for(let n=existingMax+1; n<=target; n++){
+    const tpl = week[(n-1) % week.length];
+    try{
+      const created = await rest('program_days', { method:'POST', body:{
+        program_id: program.id, day_number: n,
+        title: tpl.title, description: tpl.description || '', is_rest_day: !!tpl.is_rest_day
+      }, prefer:'return=representation' });
+      const dayRow = created && created[0];
+      if(!dayRow) continue;
+      let exercisesForDay = [];
+      if(!tpl.is_rest_day && tpl.exercises && tpl.exercises.length){
+        const exBody = tpl.exercises.map((ex,idx) => ({
+          day_id: dayRow.id, order_index: idx, name: ex.name,
+          target_sets: ex.sets || null, target_reps: ex.reps || null, target_weight_kg: ex.weight || null
+        }));
+        const createdEx = await rest('exercises', { method:'POST', body: exBody, prefer:'return=representation' });
+        exercisesForDay = createdEx || [];
+      }
+      newDays.push({ ...dayRow, exercises: exercisesForDay });
+    }catch(e){ break; } // אם משהו נכשל, לא נעצור את טעינת האפליקציה - פשוט נמשיך עם מה שיש
+  }
+  program.program_days = days.concat(newDays);
+  return program;
+}
+
+async function openCreateProgramModal(traineeId){
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
-  let selectedTemplate = null;
+  let selectedTemplate = null; // '', 'custom', or a PROGRAM_TEMPLATES key
+  const savedTemplates = await getDayTemplates();
+  const dayLabels = ['יום א׳','יום ב׳','יום ג׳','יום ד׳','יום ה׳','יום ו׳','שבת'];
   bg.innerHTML = `
     <div class="modal">
       <h3>תוכנית אימונים חדשה</h3>
@@ -1491,6 +1653,7 @@ function openCreateProgramModal(traineeId){
         <div class="templates-row">
           <div class="template-chip selected" data-tpl="">ריקה (אוסיף ימים בעצמי)</div>
           ${Object.entries(PROGRAM_TEMPLATES).map(([k,t]) => `<div class="template-chip" data-tpl="${k}">${t.label}</div>`).join('')}
+          ${savedTemplates.length ? `<div class="template-chip" data-tpl="custom">🗓 תבנית שבועית מהתבניות שלי</div>` : ''}
         </div>
       </div>
       <div class="field"><label>שם התוכנית</label><input id="pTitle" value="תוכנית 90 יום"></div>
@@ -1499,6 +1662,17 @@ function openCreateProgramModal(traineeId){
       <div class="field hidden" id="fillDaysField">
         <label>כמה ימים למלא מראש מהתבנית? (אפשר להוסיף עוד ימים ידנית בהמשך)</label>
         <input id="pFillDays" type="number" value="7" min="1">
+      </div>
+      <div class="field hidden" id="customWeekField">
+        <label>בניית מחזור שבועי - בחרי תבנית שמורה (או מנוחה) לכל יום</label>
+        ${dayLabels.map((dl,i) => `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="min-width:52px;font-size:12px;color:var(--muted);">${dl}</span>
+            <select class="custom-day-select" data-slot="${i}" style="flex:1;">
+              <option value="">מנוחה</option>
+              ${savedTemplates.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
+            </select>
+          </div>`).join('')}
       </div>
       <div id="pErr" class="error hidden"></div>
       <div class="modal-actions">
@@ -1512,7 +1686,8 @@ function openCreateProgramModal(traineeId){
       bg.querySelectorAll('[data-tpl]').forEach(c=>c.classList.remove('selected'));
       chip.classList.add('selected');
       selectedTemplate = chip.getAttribute('data-tpl') || null;
-      document.getElementById('fillDaysField').classList.toggle('hidden', !selectedTemplate);
+      document.getElementById('fillDaysField').classList.toggle('hidden', !selectedTemplate || selectedTemplate === 'custom');
+      document.getElementById('customWeekField').classList.toggle('hidden', selectedTemplate !== 'custom');
     };
   });
   document.getElementById('pCancel').onclick = () => bg.remove();
@@ -1522,16 +1697,40 @@ function openCreateProgramModal(traineeId){
     saveBtn.disabled = true; saveBtn.textContent = 'יוצרת...';
     try{
       const duration = parseInt(document.getElementById('pDur').value) || 90;
+
+      // בניית מערך "week" אחיד - בין אם מתבנית מובנית, מותאמת אישית, או ריק
+      let week = null;
+      if(selectedTemplate === 'custom'){
+        week = Array.from(bg.querySelectorAll('.custom-day-select')).map(sel => {
+          const tid = sel.value;
+          if(!tid) return { title:'מנוחה', is_rest_day:true };
+          const tpl = savedTemplates.find(t => t.id === tid);
+          return {
+            title: tpl.title || tpl.name, description: tpl.description || '', is_rest_day:false,
+            exercises: (tpl.exercises||[]).map(e => ({ name:e.name, sets:e.target_sets, reps:e.target_reps, weight:e.target_weight_kg }))
+          };
+        });
+        if(week.every(d => d.is_rest_day)){
+          errEl.textContent = 'בחרי לפחות תבנית אחת ליום כלשהו בשבוע.';
+          errEl.classList.remove('hidden');
+          saveBtn.disabled = false; saveBtn.textContent = 'יצירה';
+          return;
+        }
+      } else if(selectedTemplate && PROGRAM_TEMPLATES[selectedTemplate]){
+        week = PROGRAM_TEMPLATES[selectedTemplate].week;
+      }
+
       const program = await rest('programs', { method:'POST', body:{
         trainee_id: traineeId, coach_id: PROFILE.id,
         title: document.getElementById('pTitle').value.trim() || 'תוכנית 90 יום',
         start_date: document.getElementById('pStart').value,
-        duration_days: duration
+        duration_days: duration,
+        template_key: selectedTemplate || null,
+        week_pattern: week
       }, prefer:'return=representation' });
       const newProgram = program && program[0];
-      if(newProgram && selectedTemplate && PROGRAM_TEMPLATES[selectedTemplate]){
-        const fillDays = Math.min(duration, parseInt(document.getElementById('pFillDays').value) || 7);
-        const week = PROGRAM_TEMPLATES[selectedTemplate].week;
+      if(newProgram && week){
+        const fillDays = selectedTemplate === 'custom' ? Math.min(duration, 7) : Math.min(duration, parseInt(document.getElementById('pFillDays').value) || 7);
         for(let i=0;i<fillDays;i++){
           const tpl = week[i % week.length];
           saveBtn.textContent = `יוצרת יום ${i+1}/${fillDays}...`;
@@ -1574,7 +1773,8 @@ async function openAddDayModal(programId, programStartDate){
         <input placeholder='ק"ג' type="number" step="0.5" data-ex="weight" data-i="${i}" value="${r.weight||''}">
         <button type="button" class="icon-btn" data-lib="${i}" title="בחירה מהספרייה" style="color:var(--blue-bright);border-color:var(--blue-dim);">📚</button>
         <button type="button" class="icon-btn" data-remove="${i}">✕</button>
-      </div>`).join('');
+      </div>
+      <div class="video-input-row"><input placeholder="🎥 קישור לסרטון הדרכה (YouTube וכו׳, אופציונלי)" data-ex="video" data-i="${i}" value="${r.video||''}"></div>`).join('');
     wrap.querySelectorAll('[data-ex]').forEach(inp => {
       inp.oninput = () => { exerciseRows[inp.getAttribute('data-i')][inp.getAttribute('data-ex')] = inp.value; };
     });
@@ -1663,7 +1863,8 @@ async function openAddDayModal(programId, programStartDate){
           day_id: newDay.id, order_index: i, name: r.name.trim(),
           target_sets: r.sets ? parseInt(r.sets) : null,
           target_reps: r.reps ? String(r.reps).trim() : null,
-          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null,
+          video_url: r.video ? r.video.trim() : null
         }));
         await rest('exercises', { method:'POST', body: exBody });
       }
@@ -1683,7 +1884,7 @@ async function openManageExercisesModal(day){
   bg.className = 'modal-bg';
   const templates = await getDayTemplates();
   let rows = (day.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index).map(e => ({
-    id: e.id, name: e.name, sets: e.target_sets ?? '', reps: e.target_reps ?? '', weight: e.target_weight_kg ?? ''
+    id: e.id, name: e.name, sets: e.target_sets ?? '', reps: e.target_reps ?? '', weight: e.target_weight_kg ?? '', video: e.video_url ?? ''
   }));
   let deletedIds = [];
   function renderRows(){
@@ -1696,7 +1897,8 @@ async function openManageExercisesModal(day){
         <input placeholder='ק"ג' type="number" step="0.5" data-ex="weight" data-i="${i}" value="${r.weight||''}">
         <button type="button" class="icon-btn" data-lib="${i}" title="בחירה מהספרייה" style="color:var(--blue-bright);border-color:var(--blue-dim);">📚</button>
         <button type="button" class="icon-btn" data-remove="${i}">✕</button>
-      </div>`).join('') || `<p class="muted" style="font-size:12px;">אין תרגילים עדיין - הוסיפי למטה, או טעני תבנית שמורה למעלה.</p>`;
+      </div>
+      <div class="video-input-row"><input placeholder="🎥 קישור לסרטון הדרכה (YouTube וכו׳, אופציונלי)" data-ex="video" data-i="${i}" value="${r.video||''}"></div>`).join('') || `<p class="muted" style="font-size:12px;">אין תרגילים עדיין - הוסיפי למטה, או טעני תבנית שמורה למעלה.</p>`;
     wrap.querySelectorAll('[data-ex]').forEach(inp => {
       inp.oninput = () => { rows[inp.getAttribute('data-i')][inp.getAttribute('data-ex')] = inp.value; };
     });
@@ -1774,7 +1976,8 @@ async function openManageExercisesModal(day){
           day_id: day.id, order_index: i, name: r.name.trim(),
           target_sets: r.sets ? parseInt(r.sets) : null,
           target_reps: r.reps ? String(r.reps).trim() : null,
-          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null,
+          video_url: r.video ? r.video.trim() : null
         })) });
       }
       for(const r of toUpdate){
@@ -1782,7 +1985,8 @@ async function openManageExercisesModal(day){
           name: r.name.trim(),
           target_sets: r.sets ? parseInt(r.sets) : null,
           target_reps: r.reps ? String(r.reps).trim() : null,
-          target_weight_kg: r.weight ? parseFloat(r.weight) : null
+          target_weight_kg: r.weight ? parseFloat(r.weight) : null,
+          video_url: r.video ? r.video.trim() : null
         }});
       }
       bg.remove();
@@ -1903,7 +2107,7 @@ async function renderTraineeHome(){
   app.innerHTML = appShell(
     [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
     'program',
-    `<p class="muted">טוען...</p>`
+    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
   bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
@@ -1913,7 +2117,8 @@ async function renderTraineeHome(){
   }catch(e){ showToast(e.message, true); }
   await getExerciseLibrary();
 
-  const program = programs[0] || null;
+  let program = programs[0] || null;
+  if(program) program = await autoExtendProgramIfNeeded(program);
   const days = program ? (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number) : [];
   const doneCount = days.filter(d=>d.completed).length;
   const workDaysCount = days.filter(d=>!d.is_rest_day).length;
@@ -1950,17 +2155,19 @@ async function renderTraineeHome(){
         <div class="ring-wrap">${progressRing(pct)}<div><div style="font-family:var(--font-mono);font-weight:800;font-size:18px;">${pct}%</div><div class="muted" style="font-size:12px;">עמידה בתוכנית</div></div></div>
       </div>` : ''}
     </div>
+    ${days.length ? `<p class="muted" style="font-size:11.5px;margin-bottom:10px;">💡 טיפ: אפשר להחליק (swipe) על כרטיס אימון כדי לסמן/לבטל סימון בוצע במהירות</p>` : ''}
     <div class="panel">
       ${days.length ? days.map(d => {
         const exs = (d.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index);
         const lbl = program ? dayLabel(program.start_date, d.day_number) : null;
+        const isToday = todaysDay && todaysDay.id === d.id;
         return `
-        <div class="day-card ${d.completed?'done':''} ${d.is_rest_day?'rest':''}" data-daycard="${d.id}">
+        <div class="day-card ${d.completed?'done':''} ${d.is_rest_day?'rest':''} ${isToday?'is-today':''}" data-daycard="${d.id}">
           <div class="day-card-head" data-toggle="${d.id}">
             <input type="checkbox" class="day-check" data-dayid="${d.id}" ${d.completed?'checked':''} ${d.is_rest_day?'disabled':''} onclick="event.stopPropagation()">
             <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
             <div class="day-info">
-              <div class="t">${d.title || (d.is_rest_day?'יום מנוחה':'אימון')}</div>
+              <div class="t">${d.title || (d.is_rest_day?'יום מנוחה':'אימון')} ${isToday ? '<span class="today-badge">היום</span>' : ''}</div>
               ${d.description ? `<div class="d">${d.description}</div>` : ''}
             </div>
             ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : (exs.length ? `<span class="badge">${exs.length} תרגילים</span>` : '')}
@@ -1968,17 +2175,22 @@ async function renderTraineeHome(){
             ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
           </div>
           ${!d.is_rest_day ? `<div class="day-card-body">
-            ${exs.map(ex => `
+            ${exs.map(ex => {
+              const last = findLastLoggedValues(ex.name, days, d.day_number);
+              return `
               <div class="exercise-item ${ex.completed?'ex-done':''}" data-exid="${ex.id}">
                 <div class="ex-name">${findLibraryInstructions(ex.name) ? `<span class="info-dot" data-instr="${ex.name.replace(/"/g,'&quot;')}">i</span>` : ''}<span data-history="${ex.name.replace(/"/g,'&quot;')}" style="cursor:pointer;text-decoration:underline dotted;">${ex.name} <span style="font-size:11px;color:var(--blue-bright);">📈 היסטוריה</span></span></div>
                 <div class="ex-target">יעד: ${ex.target_sets ?? '—'} סטים × ${ex.target_reps ?? '—'} חזרות${ex.target_weight_kg!=null ? ` · ${ex.target_weight_kg} ק"ג` : ''}</div>
+                ${ex.video_url ? `<button class="video-link-btn" data-watch="${ex.video_url.replace(/"/g,'&quot;')}">▶ צפייה בסרטון הדרכה</button>` : ''}
+                ${last ? `<button class="same-last-btn" data-samelast="${ex.id}" data-sets="${last.sets ?? ''}" data-reps="${(last.reps||'').replace(/"/g,'&quot;')}" data-weight="${last.weight ?? ''}">🔁 כמו בפעם הקודמת (${last.weight ?? '—'} ק"ג × ${last.reps ?? '—'})</button>` : ''}
                 <div class="ex-log-grid">
                   <div class="f"><label>סטים בפועל</label><input type="number" class="ex-sets" value="${ex.actual_sets ?? ''}"></div>
                   <div class="f"><label>חזרות בפועל</label><input class="ex-reps" value="${ex.actual_reps ?? ''}"></div>
                   <div class="f"><label>ק"ג בפועל</label><input type="number" step="0.5" class="ex-weight" value="${ex.actual_weight_kg ?? ''}"></div>
                   <button class="btn small ex-save">${ex.completed ? '✓ עודכן' : 'שמירה'}</button>
                 </div>
-              </div>`).join('')}
+              </div>`;
+            }).join('')}
             <div style="margin-top:12px;">
               <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">הערה/שאלה למאמן על היום הזה</label>
               <textarea class="trainee-note-input" data-noteday="${d.id}" rows="2" placeholder="לדוגמה: הרגשתי כאב בברך בסקוואט...">${d.trainee_note || ''}</textarea>
@@ -2012,6 +2224,33 @@ async function renderTraineeHome(){
       const card = document.querySelector(`[data-daycard="${head.getAttribute('data-toggle')}"]`);
       if(card && card.querySelector('.day-card-body')) card.classList.toggle('expanded');
     };
+  });
+
+  // החלקה (swipe) על כרטיס יום במובייל = סימון/ביטול סימון כבוצע, בלי לפתוח את הכרטיס
+  document.querySelectorAll('.day-card:not(.rest)').forEach(card => {
+    let startX = null, startY = null, dragging = false;
+    card.addEventListener('touchstart', (ev) => {
+      startX = ev.touches[0].clientX; startY = ev.touches[0].clientY; dragging = true;
+    }, { passive:true });
+    card.addEventListener('touchmove', (ev) => {
+      if(!dragging || startX===null) return;
+      const dx = ev.touches[0].clientX - startX;
+      const dy = ev.touches[0].clientY - startY;
+      if(Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 15){
+        card.style.transform = `translateX(${dx*0.3}px)`;
+      }
+    }, { passive:true });
+    card.addEventListener('touchend', (ev) => {
+      card.style.transform = '';
+      if(!dragging || startX===null) return;
+      const dx = (ev.changedTouches[0].clientX - startX);
+      const dy = (ev.changedTouches[0].clientY - startY);
+      dragging = false; startX = null;
+      if(Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy)){
+        const cb = card.querySelector('.day-check');
+        if(cb && !cb.disabled){ cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
+      }
+    });
   });
 
   document.querySelectorAll('[data-trainee-move]').forEach(btn => {
@@ -2055,6 +2294,23 @@ async function renderTraineeHome(){
     };
   });
 
+  document.querySelectorAll('[data-watch]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      openVideoModal(btn.getAttribute('data-watch'));
+    };
+  });
+
+  document.querySelectorAll('[data-samelast]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const item = btn.closest('.exercise-item');
+      item.querySelector('.ex-sets').value = btn.getAttribute('data-sets') || '';
+      item.querySelector('.ex-reps').value = btn.getAttribute('data-reps') || '';
+      item.querySelector('.ex-weight').value = btn.getAttribute('data-weight') || '';
+    };
+  });
+
   document.querySelectorAll('.exercise-item').forEach(item => {
     const saveBtn = item.querySelector('.ex-save');
     saveBtn.onclick = async (ev) => {
@@ -2073,6 +2329,7 @@ async function renderTraineeHome(){
         item.classList.add('ex-done');
         saveBtn.textContent = '✓ עודכן';
         showToast('התרגיל נשמר');
+        startRestTimer(90);
       }catch(e){ showToast(e.message, true); }
     };
   });
@@ -2097,7 +2354,7 @@ async function renderTraineeNutrition(){
   app.innerHTML = appShell(
     [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
     'nutrition',
-    `<p class="muted">טוען...</p>`
+    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
   bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
@@ -2140,7 +2397,7 @@ async function renderTraineeProgress(){
   app.innerHTML = appShell(
     [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
     'progress',
-    `<p class="muted">טוען...</p>`
+    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
   bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
@@ -2371,11 +2628,28 @@ async function openLogProgressModal(){
    ראוטר ראשי
    ===================================================================== */
 function render(){
+  stopRestTimer();
   if(STATE.view === 'config') return renderConfig();
   if(STATE.view === 'auth') return renderAuth();
   if(STATE.view === 'coach') return renderCoachHome();
   if(STATE.view === 'trainee') return renderTraineeHome();
 }
+
+/* Enter בתוך שדה טקסט בתוך מודל לוחץ אוטומטית על כפתור הפעולה הראשי (חוסך צורך לגעת בעכבר/מסך) */
+document.addEventListener('keydown', (ev) => {
+  if(ev.key !== 'Enter') return;
+  const tag = ev.target.tagName;
+  if(tag === 'TEXTAREA') return; // בטקסט ארוך, Enter אמור ליצור שורה חדשה
+  const modal = ev.target.closest('.modal');
+  if(!modal) return;
+  const actions = modal.querySelector('.modal-actions');
+  if(!actions) return;
+  const primaryBtn = actions.querySelector('.btn.full') || actions.querySelector('.btn:not(.ghost)');
+  if(primaryBtn && !primaryBtn.disabled){
+    ev.preventDefault();
+    primaryBtn.click();
+  }
+});
 
 (async function boot(){
   document.getElementById('app').innerHTML = `<div class="centerscreen">${motionMark(38,true)}</div>`;
