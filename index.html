@@ -1377,6 +1377,7 @@ async function renderCoachTraineeDetail(){
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${!program ? `<button class="btn small" id="createProgramBtn">+ יצירת תוכנית</button>` : `
             <button class="btn small" id="addDayBtn">+ הוספת יום</button>
+            ${!program.week_pattern ? `<button class="btn ghost small" id="makeRecurringBtn">🔁 המשך אוטומטית לפי השבוע הזה</button>` : `<span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);">🔁 ממשיך אוטומטית</span>`}
             <button class="icon-btn" id="deleteProgramBtn" title="מחיקת התוכנית כולה">🗑</button>
           `}
         </div>
@@ -1398,6 +1399,8 @@ async function renderCoachTraineeDetail(){
     document.getElementById('createProgramBtn').onclick = () => openCreateProgramModal(tid);
   } else {
     document.getElementById('addDayBtn').onclick = () => openAddDayModal(program.id, program.start_date);
+    const makeRecurringBtn = document.getElementById('makeRecurringBtn');
+    if(makeRecurringBtn) makeRecurringBtn.onclick = () => openMakeRecurringModal(program);
     document.getElementById('deleteProgramBtn').onclick = () => {
       if(!confirm(`למחוק את כל התוכנית "${program.title}" כולל כל הימים והתרגילים? לא ניתן לשחזר. אחרי המחיקה תוכלי ליצור תוכנית חדשה.`)) return;
       rest('programs', { method:'DELETE', query:`?id=eq.${program.id}` })
@@ -1604,6 +1607,55 @@ const PROGRAM_TEMPLATES = {
     ]
   }
 };
+
+function openMakeRecurringModal(program){
+  const existingDays = (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number);
+  const maxBuilt = existingDays.length ? Math.max(...existingDays.map(d=>d.day_number)) : 0;
+  const suggestedLen = Math.min(maxBuilt, 7) || 7;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>המשך אוטומטית לפי השבוע שכבר בנית</h3>
+      <p class="muted" style="font-size:13px;line-height:1.6;">
+        זה ייקח את הימים שכבר בנית (מיום 1 עד המספר שתבחרי), וימשיך לחזור עליהם אוטומטית כל שבוע עד סוף התוכנית - בלי שתצטרכי להוסיף ימים ידנית שוב.
+      </p>
+      <div class="field">
+        <label>אורך המחזור השבועי (בימים)</label>
+        <input id="recurLen" type="number" value="${suggestedLen}" min="1" max="${maxBuilt || 30}">
+      </div>
+      <div id="recurErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="recurCancel">ביטול</button>
+        <button class="btn full" id="recurConfirm">הפעלה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('recurCancel').onclick = () => bg.remove();
+  document.getElementById('recurConfirm').onclick = async () => {
+    const errEl = document.getElementById('recurErr');
+    const len = parseInt(document.getElementById('recurLen').value);
+    if(!len || len < 1){ errEl.textContent = 'נא להזין אורך מחזור תקין.'; errEl.classList.remove('hidden'); return; }
+    const week = [];
+    for(let n=1; n<=len; n++){
+      const d = existingDays.find(x => x.day_number === n);
+      if(!d){ week.push({ title:'מנוחה', is_rest_day:true }); continue; }
+      week.push({
+        title: d.title || '', description: d.description || '', is_rest_day: !!d.is_rest_day,
+        exercises: (d.exercises || []).map(e => ({ name:e.name, sets:e.target_sets, reps:e.target_reps, weight:e.target_weight_kg }))
+      });
+    }
+    try{
+      await rest('programs', { method:'PATCH', query:`?id=eq.${program.id}`, body:{ week_pattern: week, template_key: 'custom' } });
+      bg.remove();
+      showToast('מעכשיו זה ימשיך אוטומטית כל שבוע 🔁');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
 
 async function autoExtendProgramIfNeeded(program){
   if(!program || !program.week_pattern || !program.week_pattern.length) return program;
