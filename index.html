@@ -1306,6 +1306,10 @@ function openEditTraineeModal(trainee){
       <h3>עריכת פרטי מתאמן</h3>
       <div class="field"><label>שם מלא</label><input id="etName" value="${(trainee.full_name||'').replace(/"/g,'&quot;')}"></div>
       <div class="field"><label>טלפון</label><input id="etPhone" type="tel" placeholder="05X-XXXXXXX" value="${trainee.phone_number || ''}"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:16px;">
+        <input type="checkbox" id="etSelfEdit" style="width:auto;" ${trainee.can_self_edit ? 'checked' : ''}>
+        לאפשר למתאמן/ת לערוך בעצמו/ה תרגילים (הוספה/עריכה/מחיקה) בתוכנית שלו/ה
+      </label>
       <div class="config-note" style="margin-top:4px;">שינוי כתובת המייל להתחברות לא אפשרי מכאן מטעמי אבטחה - זה נעשה ב-Supabase Dashboard → Authentication → Users.</div>
       <div id="etErr" class="error hidden"></div>
       <div class="modal-actions">
@@ -1321,7 +1325,8 @@ function openEditTraineeModal(trainee){
     if(!name){ errEl.textContent = 'נא להזין שם.'; errEl.classList.remove('hidden'); return; }
     try{
       await rest('profiles', { method:'PATCH', query:`?id=eq.${trainee.id}`, body:{
-        full_name: name, phone_number: document.getElementById('etPhone').value.trim() || null
+        full_name: name, phone_number: document.getElementById('etPhone').value.trim() || null,
+        can_self_edit: document.getElementById('etSelfEdit').checked
       }});
       bg.remove();
       showToast('הפרטים עודכנו');
@@ -2136,7 +2141,8 @@ async function openAddDayModal(programId, programStartDate){
   };
 }
 
-async function openManageExercisesModal(day){
+async function openManageExercisesModal(day, onDone){
+  onDone = onDone || renderCoachTraineeDetail;
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   const templates = await getDayTemplates();
@@ -2213,7 +2219,7 @@ async function openManageExercisesModal(day){
     renderRows();
     showToast(`התבנית "${tpl.name}" נטענה - לחצי "שמירת שינויים" לאישור`);
   };
-  document.getElementById('mexCancel').onclick = () => { bg.remove(); renderCoachTraineeDetail(); };
+  document.getElementById('mexCancel').onclick = () => { bg.remove(); onDone(); };
   document.getElementById('mexSave').onclick = async () => {
     const errEl = document.getElementById('mexErr');
     const saveBtn = document.getElementById('mexSave');
@@ -2248,7 +2254,7 @@ async function openManageExercisesModal(day){
       }
       bg.remove();
       showToast('התרגילים נשמרו');
-      renderCoachTraineeDetail();
+      onDone();
     }catch(e){
       errEl.textContent = e.message;
       errEl.classList.remove('hidden');
@@ -2449,6 +2455,7 @@ async function renderTraineeHome(){
             </div>
             ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : (exs.length ? `<span class="badge">${exs.length} תרגילים</span>` : '')}
             <button class="icon-btn" data-trainee-move="${d.id}" data-daynum="${d.day_number}" title="החלפת יום" onclick="event.stopPropagation()">↕</button>
+            ${PROFILE.can_self_edit ? `<button class="btn ghost small" data-self-manage-ex="${d.id}" onclick="event.stopPropagation()">✎ ניהול תרגילים</button>` : ''}
             ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
           </div>
           ${!d.is_rest_day ? `<div class="day-card-body">
@@ -2540,6 +2547,15 @@ async function renderTraineeHome(){
       const dayId = btn.getAttribute('data-trainee-move');
       const currentNum = parseInt(btn.getAttribute('data-daynum'));
       openMoveDayModal(dayId, currentNum, program, renderTraineeHome);
+    };
+  });
+
+  document.querySelectorAll('[data-self-manage-ex]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const dayId = btn.getAttribute('data-self-manage-ex');
+      const day = days.find(d => d.id === dayId);
+      if(day) openManageExercisesModal(day, renderTraineeHome);
     };
   });
 
