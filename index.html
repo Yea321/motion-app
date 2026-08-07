@@ -737,6 +737,69 @@ function dayLabel(startDateStr, dayNumber){
   return { weekday: HEBREW_WEEKDAYS[d.getDay()], dateStr: d.toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'}), fullDate: d.toLocaleDateString('he-IL'), dateObj: d };
 }
 
+let WELCOME_SHOWN_THIS_SESSION = false;
+function maybeShowWelcome(){
+  if(WELCOME_SHOWN_THIS_SESSION) return;
+  if(!PROFILE || PROFILE.has_seen_welcome) return;
+  WELCOME_SHOWN_THIS_SESSION = true;
+  openWelcomeModal(PROFILE.role);
+}
+
+function openWelcomeModal(role){
+  const coachSections = [
+    { icon:'👥', title:'המתאמנים שלך', text:'בעמוד הראשי מוסיפים מתאמן חדש עם "+ הוספת מתאמן" (שם, מייל, סיסמה זמנית). לחיצה על מתאמן פותחת את כל הפרטים שלו - תוכנית, תפריט והתקדמות.' },
+    { icon:'🏋️', title:'בניית תוכנית אימונים', text:'"+ יצירת תוכנית" נותנת בחירה: תבנית מוכנה (A/B/C, פול-בודי ועוד), תבנית שבועית משלך מהתבניות השמורות, או תוכנית ריקה שבונים ידנית. תוכניות עם תבנית ממשיכות להתמלא לבד שבוע-שבוע, בלי שצריך לגעת בזה.' },
+    { icon:'📚', title:'ספריית תרגילים', text:'כשמוסיפים תרגיל, כפתור ה-📚 פותח ספרייה עם הוראות ביצוע לכל תרגיל. אפשר גם להוסיף תרגילים חדשים לספרייה, ולצרף קישור סרטון הדרכה לכל תרגיל.' },
+    { icon:'🍽', title:'תפריט תזונה', text:'לכל מתאמן אפשר לבנות תפריט עם יעדי קלוריות/חלבון/פחמימות/שומן, ולהוסיף ארוחות מפורטות.' },
+    { icon:'📊', title:'מעקב התקדמות', text:'"🗓 לוח 90 יום" מראה את כל התוכנית בצבעים (בוצע/הוחמץ/מנוחה). יש גם גרף משקל, טבלת מדידות, וייצוא ל-CSV.' },
+  ];
+  const traineeSections = [
+    { icon:'📋', title:'התוכנית שלך', text:'כל יום אימון מוצג ככרטיס - לחיצה עליו פותחת את התרגילים. אפשר גם להחליק (swipe) על הכרטיס כדי לסמן/לבטל "בוצע" במהירות, בלי לפתוח אותו.' },
+    { icon:'✍️', title:'רישום ביצוע', text:'בכל תרגיל ממלאים כמה סטים/חזרות/ק"ג עשית בפועל ולוחצים "שמירה". הכפתור "🔁 כמו בפעם הקודמת" ממלא אוטומטית את מה שעשית בפעם הקודמת. אחרי השמירה נפתח טיימר מנוחה של 90 שניות.' },
+    { icon:'🔄', title:'החלפת תרגיל', text:'אם תרגיל לא מתאים - כפתור "🔄 החלפת תרגיל" מציע חלופות מאותה קבוצת שרירים.' },
+    { icon:'📈', title:'ההתקדמות שלך', text:'רושמים מדידות (משקל, היקפים, תמונה), רואים גרף מגמה, ואפשר להגדיר יעד משקל אישי.' },
+    { icon:'🍽', title:'התפריט שלך', text:'המאמן/ת שלך בונה תפריט עם יעדי תזונה יומיים וארוחות מפורטות - זמין בטאב הנפרד.' },
+    { icon:'💬', title:'הערה למאמן', text:'בכל יום אימון אפשר להשאיר הערה או שאלה למאמן/ת - היא תופיע אצלו/ה ליד היום.' },
+  ];
+  const sections = role === 'coach' ? coachSections : traineeSections;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal" style="max-width:480px;">
+      <div style="margin-bottom:16px;">${motionMark(34,true)}</div>
+      <h3>ברוכים הבאים ל-MOTION!</h3>
+      <p class="muted" style="font-size:13px;margin-top:-8px;">${role === 'coach' ? 'הנה סיכום קצר איך לנהל את המתאמנים שלך' : 'הנה סיכום קצר איך להשתמש באפליקציה'}</p>
+      <div style="max-height:50vh;overflow-y:auto;">
+        ${sections.map(s => `
+          <div style="display:flex;gap:12px;margin-bottom:16px;">
+            <div style="font-size:22px;flex-shrink:0;">${s.icon}</div>
+            <div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:3px;">${s.title}</div>
+              <div style="font-size:13px;color:var(--muted);line-height:1.6;">${s.text}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-top:8px;cursor:pointer;">
+        <input type="checkbox" id="welcomeDontShow" style="width:auto;">
+        אל תראי לי את זה שוב
+      </label>
+      <div class="modal-actions">
+        <button class="btn full" id="welcomeClose">הבנתי, בואי נתחיל</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('welcomeClose').onclick = async () => {
+    const dontShow = document.getElementById('welcomeDontShow').checked;
+    bg.remove();
+    if(dontShow){
+      try{
+        await rest('profiles', { method:'PATCH', query:`?id=eq.${PROFILE.id}`, body:{ has_seen_welcome: true } });
+        PROFILE.has_seen_welcome = true;
+      }catch(e){ /* לא קריטי אם זה נכשל - פשוט יופיע שוב בפעם הבאה */ }
+    }
+  };
+}
+
 function openVideoModal(url){
   const bg = document.createElement('div');
   bg.className = 'video-modal-bg';
@@ -1015,6 +1078,7 @@ async function renderCoachHome(){
       confirmDeleteTrainee(btn.getAttribute('data-delete-trainee'), btn.getAttribute('data-name'), renderCoachHome);
     };
   });
+  maybeShowWelcome();
 }
 
 function openMoveDayModal(dayId, currentNum, program, onDone){
@@ -2476,6 +2540,7 @@ async function renderTraineeHome(){
       }catch(e){ showToast(e.message, true); cb.checked = !cb.checked; }
     };
   });
+  maybeShowWelcome();
 }
 
 async function renderTraineeNutrition(){
