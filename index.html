@@ -2395,7 +2395,8 @@ async function renderTraineeHome(){
           body:{ completed: cb.checked, completed_at: cb.checked ? new Date().toISOString() : null }
         });
         showToast(cb.checked ? randomMotivation() : 'הסימון בוטל');
-        cb.closest('.day-row').classList.toggle('done', cb.checked);
+        const container = cb.closest('.day-card') || cb.closest('.day-row');
+        if(container) container.classList.toggle('done', cb.checked);
       }catch(e){ showToast(e.message, true); cb.checked = !cb.checked; }
     };
   });
