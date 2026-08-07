@@ -932,14 +932,15 @@ async function renderCoachHome(){
     try{
       const ids = trainees.map(t=>t.id).join(',');
       const progressAll = await rest('progress_entries', { query:`?trainee_id=in.(${ids})&select=trainee_id,weight_kg,entry_date&order=entry_date.asc` }) || [];
-      const programsAll = await rest('programs', { query:`?trainee_id=in.(${ids})&select=trainee_id,program_days(completed,is_rest_day)&order=start_date.desc` }) || [];
+      const programsAll = await rest('programs', { query:`?trainee_id=in.(${ids})&select=trainee_id,start_date,program_days(day_number,completed,is_rest_day)&order=start_date.desc` }) || [];
       trainees.forEach(t => {
         const mine = progressAll.filter(p=>p.trainee_id===t.id);
         const lastW = mine.length ? mine[mine.length-1].weight_kg : null;
         const lastEntryDate = mine.length ? new Date(mine[mine.length-1].entry_date) : null;
         const daysSince = lastEntryDate ? Math.floor((Date.now()-lastEntryDate.getTime())/86400000) : null;
         const prog = programsAll.find(p=>p.trainee_id===t.id);
-        const workDays = prog ? (prog.program_days||[]).filter(d=>!d.is_rest_day) : [];
+        const dueProgDays = prog ? (prog.program_days||[]).filter(d => dayDate(prog.start_date, d.day_number) <= new Date()) : [];
+        const workDays = dueProgDays.filter(d=>!d.is_rest_day);
         const adherence = workDays.length ? Math.round(100*workDays.filter(d=>d.completed).length/workDays.length) : null;
         statsByTrainee[t.id] = { lastW, adherence, daysSince };
       });
@@ -1377,7 +1378,10 @@ async function renderCoachTraineeDetail(){
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${!program ? `<button class="btn small" id="createProgramBtn">+ יצירת תוכנית</button>` : `
             <button class="btn small" id="addDayBtn">+ הוספת יום</button>
-            ${!program.week_pattern ? `<button class="btn ghost small" id="makeRecurringBtn">🔁 המשך אוטומטית לפי השבוע הזה</button>` : `<span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);">🔁 ממשיך אוטומטית</span>`}
+            ${!program.week_pattern ? `<button class="btn ghost small" id="makeRecurringBtn">🔁 המשך אוטומטית לפי השבוע הזה</button>` : `
+              <span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);">🔁 ממשיך אוטומטית</span>
+              <button class="btn ghost small" id="addWeekNowBtn">➕ הוספת שבוע נוסף עכשיו</button>
+            `}
             <button class="icon-btn" id="deleteProgramBtn" title="מחיקת התוכנית כולה">🗑</button>
           `}
         </div>
@@ -1401,6 +1405,18 @@ async function renderCoachTraineeDetail(){
     document.getElementById('addDayBtn').onclick = () => openAddDayModal(program.id, program.start_date);
     const makeRecurringBtn = document.getElementById('makeRecurringBtn');
     if(makeRecurringBtn) makeRecurringBtn.onclick = () => openMakeRecurringModal(program);
+    const addWeekNowBtn = document.getElementById('addWeekNowBtn');
+    if(addWeekNowBtn) addWeekNowBtn.onclick = async () => {
+      addWeekNowBtn.disabled = true; addWeekNowBtn.textContent = 'מוסיפה...';
+      try{
+        await extendProgramByOneWeek(program);
+        showToast('שבוע נוסף התווסף לתוכנית');
+        renderCoachTraineeDetail();
+      }catch(e){
+        showToast(e.message, true);
+        addWeekNowBtn.disabled = false; addWeekNowBtn.textContent = '➕ הוספת שבוע נוסף עכשיו';
+      }
+    };
     document.getElementById('deleteProgramBtn').onclick = () => {
       if(!confirm(`למחוק את כל התוכנית "${program.title}" כולל כל הימים והתרגילים? לא ניתן לשחזר. אחרי המחיקה תוכלי ליצור תוכנית חדשה.`)) return;
       rest('programs', { method:'DELETE', query:`?id=eq.${program.id}` })
@@ -1655,6 +1671,29 @@ function openMakeRecurringModal(program){
       errEl.classList.remove('hidden');
     }
   };
+}
+
+async function extendProgramByOneWeek(program){
+  if(!program.week_pattern || !program.week_pattern.length) throw new Error('לתוכנית הזו אין מחזור שבועי שמור.');
+  const week = program.week_pattern;
+  const days = program.program_days || [];
+  const existingMax = days.length ? Math.max(...days.map(d=>d.day_number)) : 0;
+  const target = Math.min(program.duration_days, existingMax + 7);
+  if(target <= existingMax) throw new Error('התוכנית כבר הגיעה לסוף המשך שלה.');
+  for(let n=existingMax+1; n<=target; n++){
+    const tpl = week[(n-1) % week.length];
+    const created = await rest('program_days', { method:'POST', body:{
+      program_id: program.id, day_number: n,
+      title: tpl.title, description: tpl.description || '', is_rest_day: !!tpl.is_rest_day
+    }, prefer:'return=representation' });
+    const dayRow = created && created[0];
+    if(dayRow && !tpl.is_rest_day && tpl.exercises && tpl.exercises.length){
+      await rest('exercises', { method:'POST', body: tpl.exercises.map((ex,idx) => ({
+        day_id: dayRow.id, order_index: idx, name: ex.name,
+        target_sets: ex.sets || null, target_reps: ex.reps || null, target_weight_kg: ex.weight || null
+      })) });
+    }
+  }
 }
 
 async function autoExtendProgramIfNeeded(program){
@@ -2173,8 +2212,10 @@ async function renderTraineeHome(){
   if(program) program = await autoExtendProgramIfNeeded(program);
   const days = program ? (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number) : [];
   const doneCount = days.filter(d=>d.completed).length;
-  const workDaysCount = days.filter(d=>!d.is_rest_day).length;
-  const pct = workDaysCount ? Math.round(100*days.filter(d=>!d.is_rest_day && d.completed).length/workDaysCount) : 0;
+  // אחוז העמידה בתוכנית נספר רק לפי ימים שכבר הגיעו (היום ואחורה) - ימים עתידיים שנוצרו מראש כ"מלאי" לא אמורים להיספר כ"לא בוצע"
+  const dueDays = program ? days.filter(d => dayDate(program.start_date, d.day_number) <= new Date()) : days;
+  const workDaysCount = dueDays.filter(d=>!d.is_rest_day).length;
+  const pct = workDaysCount ? Math.round(100*dueDays.filter(d=>!d.is_rest_day && d.completed).length/workDaysCount) : 0;
   const streak = calcStreak(days);
 
   let lastEntryDate = null;
@@ -2198,7 +2239,7 @@ async function renderTraineeHome(){
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:22px;">
       <div>
         <h2 class="page-title" style="margin-bottom:8px;">${program ? program.title : 'התוכנית שלי'}</h2>
-        ${streak>0 ? `<div class="streak-badge">🔥 ${streak} ימי רצף</div>` : `<p class="page-sub" style="margin:0;">${program ? `${doneCount} / ${days.length} ימים הושלמו` : 'המאמן שלך עדיין לא בנה עבורך תוכנית'}</p>`}
+        ${streak>0 ? `<div class="streak-badge">🔥 ${streak} ימי רצף</div>` : `<p class="page-sub" style="margin:0;">${program ? `${dueDays.filter(d=>d.completed).length} / ${dueDays.length} ימים הושלמו` : 'המאמן שלך עדיין לא בנה עבורך תוכנית'}</p>`}
         ${daysLeft!=null ? `<p class="muted" style="font-size:12px;margin-top:4px;">${daysLeft} ימים נשארו בתוכנית</p>` : ''}
       </div>
       ${program ? `<div style="display:flex;align-items:center;gap:14px;">
