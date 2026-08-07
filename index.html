@@ -306,6 +306,13 @@
   .same-last-btn{background:none;border:1px dashed var(--blue-dim);color:var(--blue-bright);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:8px;}
   .same-last-btn:hover{border-color:var(--blue);}
 
+  .rest-timer-fab{
+    position:fixed;top:50%;left:10px;transform:translateY(-50%);width:52px;height:52px;border-radius:50%;
+    background:var(--blue);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(0,0,0,0.4);z-index:79;cursor:pointer;border:none;
+  }
+  .rest-timer-fab:active{transform:translateY(-50%) scale(0.92);}
+
   .rest-timer-bar{
     position:fixed;top:50%;left:10px;transform:translateY(-50%);background:var(--bg-card);border:2px solid var(--blue);border-radius:16px;
     padding:14px 12px;z-index:80;width:120px;
@@ -622,6 +629,8 @@ function exportCSV(filename, headers, rows){
 let REST_TIMER_INTERVAL = null;
 function startRestTimer(seconds){
   stopRestTimer();
+  const fab = document.getElementById('timerFabBtn');
+  if(fab) fab.remove();
   let remaining = seconds;
   const bar = document.createElement('div');
   bar.className = 'rest-timer-bar';
@@ -653,6 +662,24 @@ function stopRestTimer(){
   REST_TIMER_INTERVAL = null;
   const bar = document.getElementById('restTimerBar');
   if(bar) bar.remove();
+  if(document.querySelector('[data-daycard]')) renderTimerFab();
+}
+function renderTimerFab(){
+  // מציגה כפתור עגול קבוע בצד שאפשר להפעיל בו טיימר בכל רגע - רק במסך "התוכנית שלי" של מתאמן, וכשאין טיימר פעיל כרגע
+  if(!PROFILE || PROFILE.role !== 'trainee') return;
+  if(document.getElementById('restTimerBar')) return;
+  if(document.getElementById('timerFabBtn')) return;
+  const fab = document.createElement('button');
+  fab.id = 'timerFabBtn';
+  fab.className = 'rest-timer-fab';
+  fab.title = 'הפעלת טיימר מנוחה';
+  fab.textContent = '⏱';
+  fab.onclick = () => startRestTimer(90);
+  document.body.appendChild(fab);
+}
+function removeTimerFab(){
+  const fab = document.getElementById('timerFabBtn');
+  if(fab) fab.remove();
 }
 
 function findLastLoggedValues(exerciseName, allDays, beforeDayNumber){
@@ -738,14 +765,21 @@ function dayLabel(startDateStr, dayNumber){
 }
 
 let WELCOME_SHOWN_THIS_SESSION = false;
-function maybeShowWelcome(){
+async function maybeShowWelcome(){
   if(WELCOME_SHOWN_THIS_SESSION) return;
   if(!PROFILE || PROFILE.has_seen_welcome) return;
   WELCOME_SHOWN_THIS_SESSION = true;
-  openWelcomeModal(PROFILE.role);
+  let coachName = null;
+  if(PROFILE.role === 'trainee' && PROFILE.coach_id){
+    try{
+      const rows = await rest('profiles', { query:`?id=eq.${PROFILE.coach_id}&select=full_name` });
+      if(rows && rows[0]) coachName = rows[0].full_name;
+    }catch(e){}
+  }
+  openWelcomeModal(PROFILE.role, coachName);
 }
 
-function openWelcomeModal(role){
+function openWelcomeModal(role, coachName){
   const coachSections = [
     { icon:'👥', title:'המתאמנים שלך', text:'בעמוד הראשי מוסיפים מתאמן חדש עם "+ הוספת מתאמן" (שם, מייל, סיסמה זמנית). לחיצה על מתאמן פותחת את כל הפרטים שלו - תוכנית, תפריט והתקדמות.' },
     { icon:'🏋️', title:'בניית תוכנית אימונים', text:'"+ יצירת תוכנית" נותנת בחירה: תבנית מוכנה (A/B/C, פול-בודי ועוד), תבנית שבועית משלך מהתבניות השמורות, או תוכנית ריקה שבונים ידנית. תוכניות עם תבנית ממשיכות להתמלא לבד שבוע-שבוע, בלי שצריך לגעת בזה.' },
@@ -753,13 +787,14 @@ function openWelcomeModal(role){
     { icon:'🍽', title:'תפריט תזונה', text:'לכל מתאמן אפשר לבנות תפריט עם יעדי קלוריות/חלבון/פחמימות/שומן, ולהוסיף ארוחות מפורטות.' },
     { icon:'📊', title:'מעקב התקדמות', text:'"🗓 לוח 90 יום" מראה את כל התוכנית בצבעים (בוצע/הוחמץ/מנוחה). יש גם גרף משקל, טבלת מדידות, וייצוא ל-CSV.' },
   ];
+  const coachLabel = coachName ? `המאמן/ת ${coachName}` : 'המאמן/ת שלך';
   const traineeSections = [
     { icon:'📋', title:'התוכנית שלך', text:'כל יום אימון מוצג ככרטיס - לחיצה עליו פותחת את התרגילים. אפשר גם להחליק (swipe) על הכרטיס כדי לסמן/לבטל "בוצע" במהירות, בלי לפתוח אותו.' },
-    { icon:'✍️', title:'רישום ביצוע', text:'בכל תרגיל ממלאים כמה סטים/חזרות/ק"ג עשית בפועל ולוחצים "שמירה". הכפתור "🔁 כמו בפעם הקודמת" ממלא אוטומטית את מה שעשית בפעם הקודמת. אחרי השמירה נפתח טיימר מנוחה של 90 שניות.' },
+    { icon:'✍️', title:'רישום ביצוע', text:'בכל תרגיל ממלאים כמה סטים/חזרות/ק"ג עשית בפועל ולוחצים "שמירה". הכפתור "🔁 כמו בפעם הקודמת" ממלא אוטומטית את מה שעשית בפעם הקודמת. אפשר גם להפעיל טיימר מנוחה בכל רגע עם הכפתור העגול ⏱ בצד המסך.' },
     { icon:'🔄', title:'החלפת תרגיל', text:'אם תרגיל לא מתאים - כפתור "🔄 החלפת תרגיל" מציע חלופות מאותה קבוצת שרירים.' },
     { icon:'📈', title:'ההתקדמות שלך', text:'רושמים מדידות (משקל, היקפים, תמונה), רואים גרף מגמה, ואפשר להגדיר יעד משקל אישי.' },
-    { icon:'🍽', title:'התפריט שלך', text:'המאמן/ת שלך בונה תפריט עם יעדי תזונה יומיים וארוחות מפורטות - זמין בטאב הנפרד.' },
-    { icon:'💬', title:'הערה למאמן', text:'בכל יום אימון אפשר להשאיר הערה או שאלה למאמן/ת - היא תופיע אצלו/ה ליד היום.' },
+    { icon:'🍽', title:'התפריט שלך', text:`${coachLabel} בונה עבורך תפריט עם יעדי תזונה יומיים וארוחות מפורטות - זמין בטאב הנפרד.` },
+    { icon:'💬', title:'הערה למאמן', text:`בכל יום אימון אפשר להשאיר הערה או שאלה - ${coachLabel} יראה אותה ליד היום.` },
   ];
   const sections = role === 'coach' ? coachSections : traineeSections;
   const bg = document.createElement('div');
@@ -768,7 +803,7 @@ function openWelcomeModal(role){
     <div class="modal" style="max-width:480px;">
       <div style="margin-bottom:16px;">${motionMark(34,true)}</div>
       <h3>ברוכים הבאים ל-MOTION!</h3>
-      <p class="muted" style="font-size:13px;margin-top:-8px;">${role === 'coach' ? 'הנה סיכום קצר איך לנהל את המתאמנים שלך' : 'הנה סיכום קצר איך להשתמש באפליקציה'}</p>
+      <p class="muted" style="font-size:13px;margin-top:-8px;">${role === 'coach' ? 'הנה סיכום קצר איך לנהל את המתאמנים שלך' : `הנה סיכום קצר איך להשתמש באפליקציה${coachName ? ` - התוכנית שלך נבנתה ע"י ${coachLabel}` : ''}`}</p>
       <div style="max-height:50vh;overflow-y:auto;">
         ${sections.map(s => `
           <div style="display:flex;gap:12px;margin-bottom:16px;">
@@ -974,6 +1009,7 @@ function bindShellNav(handlers){
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.onclick = () => {
       stopRestTimer();
+      removeTimerFab();
       const key = el.getAttribute('data-nav');
       if(key === 'logout'){
         SESSION = null; PROFILE = null; STATE = { view:'auth', activeTraineeId:null, traineeCache:{} };
@@ -2540,6 +2576,8 @@ async function renderTraineeHome(){
       }catch(e){ showToast(e.message, true); cb.checked = !cb.checked; }
     };
   });
+  removeTimerFab();
+  renderTimerFab();
   maybeShowWelcome();
 }
 
@@ -2823,6 +2861,7 @@ async function openLogProgressModal(){
    ===================================================================== */
 function render(){
   stopRestTimer();
+  removeTimerFab();
   if(STATE.view === 'config') return renderConfig();
   if(STATE.view === 'auth') return renderAuth();
   if(STATE.view === 'coach') return renderCoachHome();
