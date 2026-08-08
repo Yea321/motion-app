@@ -400,7 +400,7 @@ async function tryRestoreSession(){
     }
     if(!rows || !rows.length) throw new Error('no profile');
     PROFILE = rows[0];
-    STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
+    STATE.view = (PROFILE.role === 'trainee' && PROFILE.is_suspended) ? 'suspended' : (PROFILE.role === 'coach' ? 'coach' : 'trainee');
     return true;
   }catch(e){
     SESSION = null; PROFILE = null;
@@ -1016,7 +1016,7 @@ function renderAuth(){
       if(!rows || !rows.length) throw new Error('לא נמצא פרופיל למשתמש זה.');
       PROFILE = rows[0];
       saveLocal();
-      STATE.view = PROFILE.role === 'coach' ? 'coach' : 'trainee';
+      STATE.view = (PROFILE.role === 'trainee' && PROFILE.is_suspended) ? 'suspended' : (PROFILE.role === 'coach' ? 'coach' : 'trainee');
       render();
     }catch(e){
       errEl.textContent = e.message;
@@ -1480,9 +1480,11 @@ async function renderCoachTraineeDetail(){
         ${program ? `<button class="btn ghost small" id="showBoardBtn">🗓 לוח 90 יום</button>` : ''}
         ${progress.length ? `<button class="btn ghost small" id="exportCoachBtn">⬇ ייצוא CSV</button>` : ''}
         <button class="btn ghost small" id="editTraineeBtn">✎ עריכת פרטים</button>
+        <button class="btn ghost small" id="toggleSuspendBtn" style="${trainee.is_suspended ? 'border-color:var(--green);color:var(--green);' : ''}">${trainee.is_suspended ? '▶ ביטול השהיה' : '⏸ השהיה זמנית'}</button>
         <button class="icon-btn" id="deleteTraineeBtn" title="מחיקת מתאמן">🗑</button>
       </div>
     </div>
+    ${trainee.is_suspended ? `<div class="reminder-banner" style="background:rgba(229,72,77,0.12);border-color:var(--red);"><span>⏸ המתאמן/ת מושהה כרגע - לא יכול/ה להתחבר לאפליקציה עד שתבטלי את ההשהיה.</span></div>` : ''}
 
     <div class="grid cols-3" style="margin-bottom:16px;">
       <div class="panel stat"><div class="v">${lastWeight ?? '—'}</div><div class="l">משקל נוכחי (ק"ג)</div></div>
@@ -1568,6 +1570,16 @@ async function renderCoachTraineeDetail(){
     confirmDeleteTrainee(tid, trainee.full_name, renderCoachHome);
   };
   document.getElementById('editTraineeBtn').onclick = () => openEditTraineeModal(trainee);
+  document.getElementById('toggleSuspendBtn').onclick = () => {
+    const newVal = !trainee.is_suspended;
+    const msg = newVal
+      ? `להשהות זמנית את ${trainee.full_name}? הוא/היא לא יוכל/תוכל להתחבר לאפליקציה עד שתבטלי את ההשהיה.`
+      : `לבטל את ההשהיה של ${trainee.full_name}?`;
+    if(!confirm(msg)) return;
+    rest('profiles', { method:'PATCH', query:`?id=eq.${trainee.id}`, body:{ is_suspended: newVal } })
+      .then(() => { showToast(newVal ? 'המתאמן/ת הושהה' : 'ההשהיה בוטלה'); renderCoachTraineeDetail(); })
+      .catch(e => showToast(e.message, true));
+  };
   const boardBtn = document.getElementById('showBoardBtn');
   if(boardBtn) boardBtn.onclick = () => openAdherenceBoardModal(program, renderCoachTraineeDetail);
   if(!program){
@@ -2987,6 +2999,28 @@ function render(){
   if(STATE.view === 'auth') return renderAuth();
   if(STATE.view === 'coach') return renderCoachHome();
   if(STATE.view === 'trainee') return renderTraineeHome();
+  if(STATE.view === 'suspended') return renderSuspendedScreen();
+}
+
+function renderSuspendedScreen(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+  <div class="centerscreen">
+    <div class="card" style="text-align:center;">
+      <div style="margin-bottom:22px;display:flex;justify-content:center;">${motionMark(38,true)}</div>
+      <div style="font-size:40px;margin-bottom:12px;">⏸</div>
+      <h1 style="text-transform:none;font-size:18px;color:var(--white);">החשבון שלך מושהה זמנית</h1>
+      <p class="muted" style="font-size:14px;line-height:1.6;margin-top:10px;">
+        המאמן/ת שלך השהה/תה זמנית את הגישה שלך לאפליקציה. פני אליו/ה ישירות לפרטים נוספים.
+      </p>
+      <button class="btn ghost full" id="suspendedLogout" style="margin-top:20px;">🚪 התנתקות</button>
+    </div>
+  </div>`;
+  document.getElementById('suspendedLogout').onclick = () => {
+    SESSION = null; PROFILE = null; STATE = { view:'auth', activeTraineeId:null, traineeCache:{} };
+    clearLocal();
+    render();
+  };
 }
 
 /* Enter בתוך שדה טקסט בתוך מודל לוחץ אוטומטית על כפתור הפעולה הראשי (חוסך צורך לגעת בעכבר/מסך) */
