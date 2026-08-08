@@ -1944,6 +1944,7 @@ async function openCreateProgramModal(traineeId){
             <span style="min-width:52px;font-size:12px;color:var(--muted);">${dl}</span>
             <select class="custom-day-select" data-slot="${i}" style="flex:1;">
               <option value="">מנוחה</option>
+              <option value="__cardio__">🏃 אירובי</option>
               ${savedTemplates.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
             </select>
           </div>`).join('')}
@@ -1978,6 +1979,7 @@ async function openCreateProgramModal(traineeId){
         week = Array.from(bg.querySelectorAll('.custom-day-select')).map(sel => {
           const tid = sel.value;
           if(!tid) return { title:'מנוחה', is_rest_day:true };
+          if(tid === '__cardio__') return { title:'אימון אירובי', is_rest_day:false, exercises:[{ name:'הליכה מהירה / קרדיו', sets:1, reps:'30 דקות' }] };
           const tpl = savedTemplates.find(t => t.id === tid);
           return {
             title: tpl.title || tpl.name, description: tpl.description || '', is_rest_day:false,
@@ -2070,6 +2072,7 @@ async function openAddDayModal(programId, programStartDate){
       <div class="field"><label>כותרת</label><input id="dTitle" placeholder="לדוגמה: פלג גוף עליון"></div>
       <div class="field"><label>תיאור כללי (אופציונלי)</label><textarea id="dDesc" rows="2" placeholder="הערות כלליות ליום..."></textarea></div>
       <div class="field"><label><input type="checkbox" id="dRest" style="width:auto;margin-left:8px;">יום מנוחה</label></div>
+      <button type="button" class="add-exercise-link" id="quickCardioBtn" style="margin-bottom:16px;">🏃 מלא כיום אירובי (הליכה/ריצה/אופניים)</button>
       <div class="field" id="exercisesField">
         <label>תרגילים ביום זה</label>
         <div id="exRowsWrap"></div>
@@ -2100,6 +2103,14 @@ async function openAddDayModal(programId, programStartDate){
   document.getElementById('addExRow').onclick = () => { exerciseRows.push({}); renderExerciseRows(); };
   document.getElementById('dRest').onchange = (ev) => {
     document.getElementById('exercisesField').style.display = ev.target.checked ? 'none' : 'block';
+  };
+  document.getElementById('quickCardioBtn').onclick = () => {
+    document.getElementById('dRest').checked = false;
+    document.getElementById('exercisesField').style.display = 'block';
+    if(!document.getElementById('dTitle').value.trim()) document.getElementById('dTitle').value = 'אימון אירובי';
+    exerciseRows = [{ name:'הליכה מהירה / קרדיו', sets:'1', reps:'30 דקות' }];
+    renderExerciseRows();
+    showToast('מולא כיום אירובי - אפשר לערוך את הפרטים');
   };
   document.getElementById('saveTplBtn').onclick = () => saveDayAsTemplate(
     document.getElementById('dTitle').value.trim(), document.getElementById('dDesc').value.trim(), exerciseRows
