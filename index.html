@@ -1458,6 +1458,8 @@ async function renderCoachTraineeDetail(){
     programs = await rest('programs', { query:`?trainee_id=eq.${tid}&select=*,program_days(*,exercises(*))&order=start_date.desc` }) || [];
     nutritionPlans = await rest('nutrition_plans', { query:`?trainee_id=eq.${tid}&select=*,meals(*)&order=created_at.desc` }) || [];
   }catch(e){ showToast(e.message, true); return; }
+  let nutritionLogs = [];
+  try{ nutritionLogs = await rest('nutrition_logs', { query:`?trainee_id=eq.${tid}&select=*&order=log_date.desc&limit=10` }) || []; }catch(e){}
 
   const nutritionPlan = nutritionPlans[0] || null;
   const mealsList = nutritionPlan ? (nutritionPlan.meals || []).slice().sort((a,b)=>a.order_index-b.order_index) : [];
@@ -1544,6 +1546,17 @@ async function renderCoachTraineeDetail(){
         ` : `<div class="empty">עדיין לא נוצר תפריט למתאמן זה</div>`}
       </div>
     </div>
+
+    ${nutritionLogs.length ? `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>יומן חריגות מהתפריט (דיווחי המתאמן/ת)</h3>
+      ${nutritionLogs.map(l => `
+        <div class="day-row" style="cursor:default;">
+          <div class="day-num" style="min-width:60px;font-size:11px;">${new Date(l.log_date).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})}</div>
+          <div class="day-info"><div class="t">${l.description}</div></div>
+          <span class="badge" style="background:${l.calories_delta>0?'rgba(229,72,77,0.15)':'rgba(51,196,129,0.15)'};color:${l.calories_delta>0?'var(--red)':'var(--green)'};">${l.calories_delta>0?'+':''}${l.calories_delta} קק"ל</span>
+        </div>`).join('')}
+    </div>` : ''}
 
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -2735,12 +2748,20 @@ async function renderTraineeNutrition(){
   bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
   let plans = [];
+  let logs = [];
   try{
     plans = await rest('nutrition_plans', { query:`?trainee_id=eq.${PROFILE.id}&select=*,meals(*)&order=created_at.desc` }) || [];
   }catch(e){ showToast(e.message, true); }
+  try{
+    logs = await rest('nutrition_logs', { query:`?trainee_id=eq.${PROFILE.id}&select=*&order=log_date.desc` }) || [];
+  }catch(e){}
 
   const plan = plans[0] || null;
   const meals = plan ? (plan.meals || []).slice().sort((a,b)=>a.order_index-b.order_index) : [];
+
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+  const weekLogs = logs.filter(l => new Date(l.log_date) >= weekAgo);
+  const weekTotal = weekLogs.reduce((sum,l) => sum + (l.calories_delta||0), 0);
 
   document.querySelector('.main').innerHTML = `
     <h2 class="page-title">${plan ? plan.title : 'התפריט שלי'}</h2>
@@ -2753,7 +2774,7 @@ async function renderTraineeNutrition(){
         <div class="macro-box"><div class="v">${plan.daily_fat_g ?? '—'}</div><div class="l">שומן (גרם)</div></div>
       </div>
       ${plan.general_notes ? `<div class="panel" style="margin-bottom:16px;"><h3>הערות כלליות</h3><div style="font-size:13px;color:var(--muted);white-space:pre-wrap;">${plan.general_notes}</div></div>` : ''}
-      <div class="panel">
+      <div class="panel" style="margin-bottom:16px;">
         <h3>ארוחות</h3>
         ${meals.length ? meals.map(m => `
           <div class="meal-card">
@@ -2764,8 +2785,94 @@ async function renderTraineeNutrition(){
             ${m.description ? `<div class="meal-desc">${m.description}</div>` : ''}
           </div>`).join('') : `<div class="empty">עדיין לא נוספו ארוחות לתפריט</div>`}
       </div>
-    ` : `<div class="panel"><div class="empty">${logoSVG(46)}<div>המאמן שלך יבנה עבורך תפריט תזונה בקרוב</div></div></div>`}
+    ` : `<div class="panel" style="margin-bottom:16px;"><div class="empty">${logoSVG(46)}<div>המאמן שלך יבנה עבורך תפריט תזונה בקרוב</div></div></div>`}
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">יומן חריגות מהתפריט</h3>
+        <button class="btn small" id="addDeviationBtn">+ דיווח חריגה</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0 0;">לא הספקת לאכול משהו מהתפריט, או אכלת משהו אחר במקום? דווחי כאן כדי לשמור על תמונה מדויקת מול המאמן/ת שלך.</p>
+      ${weekLogs.length ? `
+        <div style="margin-top:14px;padding:12px 14px;background:var(--bg-elevated);border-radius:10px;border:1px solid var(--border);">
+          <div style="font-size:12px;color:var(--muted);">סה"כ השבוע (${weekLogs.length} דיווחים)</div>
+          <div style="font-family:var(--font-mono);font-size:20px;font-weight:800;color:${weekTotal>0?'var(--red)':weekTotal<0?'var(--green)':'var(--white)'};">${weekTotal>0?'+':''}${weekTotal} קק"ל</div>
+        </div>` : ''}
+      <div style="margin-top:14px;">
+        ${logs.length ? logs.slice(0,10).map(l => `
+          <div class="day-row" style="cursor:default;">
+            <div class="day-num" style="min-width:60px;font-size:11px;">${new Date(l.log_date).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})}</div>
+            <div class="day-info"><div class="t">${l.description}</div></div>
+            <span class="badge" style="background:${l.calories_delta>0?'rgba(229,72,77,0.15)':'rgba(51,196,129,0.15)'};color:${l.calories_delta>0?'var(--red)':'var(--green)'};">${l.calories_delta>0?'+':''}${l.calories_delta} קק"ל</span>
+            <button class="icon-btn" data-delete-log="${l.id}" style="width:30px;height:30px;">✕</button>
+          </div>`).join('') : `<div class="empty">עדיין אין דיווחי חריגה</div>`}
+      </div>
+    </div>
   `;
+  document.getElementById('addDeviationBtn').onclick = () => openAddDeviationModal();
+  document.querySelectorAll('[data-delete-log]').forEach(btn => {
+    btn.onclick = () => {
+      rest('nutrition_logs', { method:'DELETE', query:`?id=eq.${btn.getAttribute('data-delete-log')}` })
+        .then(() => { showToast('הדיווח נמחק'); renderTraineeNutrition(); })
+        .catch(e => showToast(e.message, true));
+    };
+  });
+}
+
+function openAddDeviationModal(){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>דיווח חריגה מהתפריט</h3>
+      <div class="field"><label>תאריך</label><input id="devDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>מה קרה?</label><textarea id="devDesc" rows="2" placeholder="לדוגמה: לא אכלתי ארוחת ערב / אכלתי פיצה במקום ארוחת צהריים"></textarea></div>
+      <div class="field">
+        <label>הפרש קלורי משוער</label>
+        <div class="templates-row">
+          <div class="template-chip" data-sign="minus">➖ אכלתי פחות</div>
+          <div class="template-chip selected" data-sign="plus">➕ אכלתי יותר</div>
+        </div>
+      </div>
+      <div class="field"><label>כמה קלוריות בערך?</label><input id="devCal" type="number" placeholder="לדוגמה: 400"></div>
+      <p class="muted" style="font-size:11.5px;">💡 טיפ: אם לא בטוחה, תערכי הערכה גסה - אפילו הערכה משוערת עוזרת למאמן/ת להבין את התמונה השבועית.</p>
+      <div id="devErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="devCancel">ביטול</button>
+        <button class="btn full" id="devSave">שמירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  let sign = 1;
+  bg.querySelectorAll('[data-sign]').forEach(chip => {
+    chip.onclick = () => {
+      bg.querySelectorAll('[data-sign]').forEach(c=>c.classList.remove('selected'));
+      chip.classList.add('selected');
+      sign = chip.getAttribute('data-sign') === 'minus' ? -1 : 1;
+    };
+  });
+  document.getElementById('devCancel').onclick = () => bg.remove();
+  document.getElementById('devSave').onclick = async () => {
+    const errEl = document.getElementById('devErr');
+    const desc = document.getElementById('devDesc').value.trim();
+    const cal = parseInt(document.getElementById('devCal').value);
+    if(!desc){ errEl.textContent = 'נא לתאר מה קרה.'; errEl.classList.remove('hidden'); return; }
+    if(!cal){ errEl.textContent = 'נא להזין הערכת קלוריות.'; errEl.classList.remove('hidden'); return; }
+    try{
+      await rest('nutrition_logs', { method:'POST', body:{
+        trainee_id: PROFILE.id,
+        log_date: document.getElementById('devDate').value,
+        description: desc,
+        calories_delta: cal * sign
+      }});
+      bg.remove();
+      showToast('הדיווח נשמר');
+      renderTraineeNutrition();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
 }
 
 async function renderTraineeProgress(){
