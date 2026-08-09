@@ -2468,8 +2468,9 @@ async function renderTraineeHome(){
         ${daysLeft!=null ? `<p class="muted" style="font-size:12px;margin-top:4px;">${daysLeft} ימים נשארו בתוכנית</p>` : ''}
         ${weeklyHtml}
       </div>
-      ${program ? `<div style="display:flex;align-items:center;gap:14px;">
+      ${program ? `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         ${todaysDay && !todaysDay.is_rest_day ? `<button class="btn small" id="todayWorkoutBtn">💪 האימון של היום</button>` : ''}
+        <button class="btn ghost small" id="addCardioBtn">🏃 הוספת אירובי</button>
         <button class="btn ghost small" id="myBoardBtn">🗓 הלוח שלי</button>
         <div class="ring-wrap">${progressRing(pct)}<div><div style="font-family:var(--font-mono);font-weight:800;font-size:18px;">${pct}%</div><div class="muted" style="font-size:12px;">עמידה בתוכנית</div></div></div>
       </div>` : ''}
@@ -2530,6 +2531,8 @@ async function renderTraineeHome(){
   if(reminderBtn) reminderBtn.onclick = renderTraineeProgress;
   const myBoardBtn = document.getElementById('myBoardBtn');
   if(myBoardBtn) myBoardBtn.onclick = () => openAdherenceBoardModal(program, renderTraineeHome);
+  const addCardioBtn = document.getElementById('addCardioBtn');
+  if(addCardioBtn) addCardioBtn.onclick = () => openAddCardioModal(program, days);
   const todayBtn = document.getElementById('todayWorkoutBtn');
   if(todayBtn && todaysDay){
     todayBtn.onclick = () => {
@@ -3035,6 +3038,68 @@ function openGoalModal(){
     }catch(e){
       document.getElementById('gErr').textContent = e.message;
       document.getElementById('gErr').classList.remove('hidden');
+    }
+  };
+}
+
+function openAddCardioModal(program, days){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>🏃 הוספת אימון אירובי</h3>
+      <p class="muted" style="font-size:12px;margin-top:-8px;">אימון אירובי שעשית בנוסף לתוכנית - ריצה, הליכה, אופניים וכו'</p>
+      <div class="field"><label>תאריך</label><input id="cardioDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>סוג פעילות</label><input id="cardioType" placeholder="לדוגמה: ריצה, הליכה, אופניים, שחייה"></div>
+      <div class="field"><label>משך (דקות)</label><input id="cardioDuration" type="number" placeholder="לדוגמה: 30"></div>
+      <div class="field"><label>הערות (אופציונלי)</label><textarea id="cardioNotes" rows="2"></textarea></div>
+      <div id="cardioErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cardioCancel">ביטול</button>
+        <button class="btn full" id="cardioSave">שמירה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('cardioCancel').onclick = () => bg.remove();
+  document.getElementById('cardioSave').onclick = async () => {
+    const errEl = document.getElementById('cardioErr');
+    const dateStr = document.getElementById('cardioDate').value;
+    const type = document.getElementById('cardioType').value.trim() || 'אירובי';
+    const duration = document.getElementById('cardioDuration').value;
+    if(!dateStr){ errEl.textContent = 'נא לבחור תאריך.'; errEl.classList.remove('hidden'); return; }
+    const saveBtn = document.getElementById('cardioSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'שומרת...';
+    try{
+      const selectedDate = new Date(dateStr);
+      const dayNumber = Math.floor((selectedDate.getTime() - new Date(program.start_date).getTime())/86400000) + 1;
+      let existingDay = days.find(d => d.day_number === dayNumber);
+      let dayId;
+      if(existingDay){
+        dayId = existingDay.id;
+        if(existingDay.is_rest_day){
+          await rest('program_days', { method:'PATCH', query:`?id=eq.${dayId}`, body:{ is_rest_day: false } });
+        }
+      } else {
+        const created = await rest('program_days', { method:'POST', body:{
+          program_id: program.id, day_number: dayNumber,
+          title: type, description: document.getElementById('cardioNotes').value.trim(), is_rest_day: false
+        }, prefer:'return=representation' });
+        dayId = created && created[0] && created[0].id;
+      }
+      if(!dayId) throw new Error('יצירת היום נכשלה.');
+      await rest('exercises', { method:'POST', body:{
+        day_id: dayId, order_index: 999, name: type,
+        target_reps: duration ? `${duration} דקות` : null,
+        actual_reps: duration ? `${duration} דקות` : null,
+        completed: true
+      }});
+      bg.remove();
+      showToast('האימון האירובי נשמר 🏃');
+      renderTraineeHome();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+      saveBtn.disabled = false; saveBtn.textContent = 'שמירה';
     }
   };
 }
