@@ -316,6 +316,16 @@
   .exercise-item .ex-name{font-size:15px;}
   .exercise-item .ex-target{font-size:12.5px;}
   .today-badge{background:var(--blue);color:#fff;font-size:10px;padding:2px 9px;border-radius:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;}
+
+  .week-folder-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;cursor:pointer;}
+  .week-folder-title{font-weight:800;font-size:15px;}
+  .week-folder-sub{font-size:11.5px;color:var(--muted);font-family:var(--font-mono);margin-top:2px;}
+  .week-folder-body{display:none;padding:0 14px 14px 14px;border-top:1px solid var(--border);}
+  .week-folder.expanded .week-folder-body{display:block;padding-top:12px;}
+  .week-chevron{transition:transform .2s ease;color:var(--muted);}
+  .week-folder.expanded .week-chevron{transform:rotate(180deg);}
+  .week-folder{border:1px solid var(--border);}
+  .week-folder .day-card:last-child{margin-bottom:0;}
   .day-card.is-today{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue);}
 
   .same-last-btn{background:none;border:1px dashed var(--blue-dim);color:var(--blue-bright);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:8px;}
@@ -2404,6 +2414,54 @@ function openAddMealModal(planId, existingMeal){
 /* =====================================================================
    מסך מתאמן
    ===================================================================== */
+function renderTraineeDayCardHtml(d, program, days, todaysDay){
+  const exs = (d.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index);
+  const lbl = program ? dayLabel(program.start_date, d.day_number) : null;
+  const isToday = todaysDay && todaysDay.id === d.id;
+  return `
+  <div class="day-card ${d.completed?'done':''} ${d.is_rest_day?'rest':''} ${isToday?'is-today':''}" data-daycard="${d.id}">
+    <div class="day-card-head" data-toggle="${d.id}">
+      <input type="checkbox" class="day-check" data-dayid="${d.id}" ${d.completed?'checked':''} ${d.is_rest_day?'disabled':''} onclick="event.stopPropagation()">
+      <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
+      <div class="day-info">
+        <div class="t">${d.title || (d.is_rest_day?'יום מנוחה':'אימון')} ${isToday ? '<span class="today-badge">היום</span>' : ''}</div>
+        ${d.description ? `<div class="d">${d.description}</div>` : ''}
+      </div>
+      ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : (exs.length ? `<span class="badge">${exs.length} תרגילים</span>` : '')}
+      <button class="icon-btn" data-trainee-move="${d.id}" data-daynum="${d.day_number}" title="החלפת יום" onclick="event.stopPropagation()">↕</button>
+      ${PROFILE.can_self_edit ? `<button class="btn ghost small" data-self-manage-ex="${d.id}" onclick="event.stopPropagation()">✎ ניהול תרגילים</button>` : ''}
+      ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
+    </div>
+    ${!d.is_rest_day ? `<div class="day-card-body">
+      ${exs.length ? `<button class="btn ghost small" data-complete-all="${d.id}" style="width:100%;margin-bottom:10px;">✅ סיימתי את כל התרגילים</button>` : ''}
+      ${exs.map(ex => {
+        const last = findLastLoggedValues(ex.name, days, d.day_number);
+        return `
+        <div class="exercise-item ${ex.completed?'ex-done':''}" data-exid="${ex.id}" data-exname="${ex.name.replace(/"/g,'&quot;')}" data-daynum="${d.day_number}">
+          <div class="ex-name">${findLibraryInstructions(ex.name) ? `<span class="info-dot" data-instr="${ex.name.replace(/"/g,'&quot;')}">i</span>` : ''}<span data-history="${ex.name.replace(/"/g,'&quot;')}" style="cursor:pointer;text-decoration:underline dotted;">${ex.name} <span style="font-size:11px;color:var(--blue-bright);">📈 היסטוריה</span></span></div>
+          <div class="ex-target">יעד: ${ex.target_sets ?? '—'} סטים × ${ex.target_reps ?? '—'} חזרות${ex.target_weight_kg!=null ? ` · ${ex.target_weight_kg} ק"ג` : ''}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            ${ex.video_url ? `<button class="video-link-btn" data-watch="${ex.video_url.replace(/"/g,'&quot;')}">▶ צפייה בסרטון הדרכה</button>` : ''}
+            <button class="video-link-btn" data-swap-ex="${ex.id}" data-ex-name="${ex.name.replace(/"/g,'&quot;')}" style="background:var(--bg-elevated);color:var(--muted);">🔄 החלפת תרגיל</button>
+          </div>
+          ${last ? `<button class="same-last-btn" data-samelast="${ex.id}" data-sets="${last.sets ?? ''}" data-reps="${(last.reps||'').replace(/"/g,'&quot;')}" data-weight="${last.weight ?? ''}">🔁 כמו בפעם הקודמת (${last.weight ?? '—'} ק"ג × ${last.reps ?? '—'})</button>` : ''}
+          <div class="ex-log-grid">
+            <div class="f"><label>סטים בפועל</label><input type="number" class="ex-sets" value="${ex.actual_sets ?? ''}"></div>
+            <div class="f"><label>חזרות בפועל</label><input class="ex-reps" value="${ex.actual_reps ?? ''}"></div>
+            <div class="f"><label>ק"ג בפועל</label><input type="number" step="0.5" class="ex-weight" value="${ex.actual_weight_kg ?? ''}"></div>
+            <button class="btn small ex-save">${ex.completed ? '✓ עודכן' : 'שמירה'}</button>
+          </div>
+        </div>`;
+      }).join('')}
+      <div style="margin-top:12px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">הערה/שאלה למאמן על היום הזה</label>
+        <textarea class="trainee-note-input" data-noteday="${d.id}" rows="2" placeholder="לדוגמה: הרגשתי כאב בברך בסקוואט...">${d.trainee_note || ''}</textarea>
+        <button class="btn ghost small note-save-btn" data-noteday="${d.id}" style="margin-top:6px;">שמירת הערה</button>
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 async function renderTraineeHome(){
   const app = document.getElementById('app');
   app.innerHTML = appShell(
@@ -2479,55 +2537,44 @@ async function renderTraineeHome(){
       </div>` : ''}
     </div>
     ${days.length ? `<p class="muted" style="font-size:11.5px;margin-bottom:10px;">💡 טיפ: אפשר להחליק (swipe) על כרטיס אימון כדי לסמן/לבטל סימון בוצע במהירות</p>` : ''}
-    <div class="panel">
-      ${days.length ? days.map(d => {
-        const exs = (d.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index);
-        const lbl = program ? dayLabel(program.start_date, d.day_number) : null;
-        const isToday = todaysDay && todaysDay.id === d.id;
+    ${(() => {
+      if(!days.length) return `<div class="panel"><div class="empty">${logoSVG(46)}<div>אין עדיין תוכנית פעילה</div></div></div>`;
+      const weeksMap = {};
+      days.forEach(d => {
+        const wn = Math.ceil(d.day_number / 7);
+        if(!weeksMap[wn]) weeksMap[wn] = [];
+        weeksMap[wn].push(d);
+      });
+      const weekNums = Object.keys(weeksMap).map(Number).sort((a,b)=>a-b);
+      const todaysWeekNum = todaysDay ? Math.ceil(todaysDay.day_number / 7) : null;
+      return weekNums.map(wn => {
+        const weekDays = weeksMap[wn];
+        const startD = weekDays[0], endD = weekDays[weekDays.length-1];
+        const startLbl = program ? dayLabel(program.start_date, startD.day_number) : null;
+        const endLbl = program ? dayLabel(program.start_date, endD.day_number) : null;
+        const workDaysInWeek = weekDays.filter(d=>!d.is_rest_day);
+        const doneInWeek = workDaysInWeek.filter(d=>d.completed).length;
+        const isCurrentWeek = wn === todaysWeekNum;
+        const hasIncompletePast = weekDays.some(d => !d.is_rest_day && !d.completed && dayDate(program.start_date, d.day_number) < new Date(new Date().toDateString()));
         return `
-        <div class="day-card ${d.completed?'done':''} ${d.is_rest_day?'rest':''} ${isToday?'is-today':''}" data-daycard="${d.id}">
-          <div class="day-card-head" data-toggle="${d.id}">
-            <input type="checkbox" class="day-check" data-dayid="${d.id}" ${d.completed?'checked':''} ${d.is_rest_day?'disabled':''} onclick="event.stopPropagation()">
-            <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
-            <div class="day-info">
-              <div class="t">${d.title || (d.is_rest_day?'יום מנוחה':'אימון')} ${isToday ? '<span class="today-badge">היום</span>' : ''}</div>
-              ${d.description ? `<div class="d">${d.description}</div>` : ''}
+        <div class="panel week-folder ${isCurrentWeek?'expanded':''}" style="margin-bottom:10px;padding:0;overflow:hidden;">
+          <div class="week-folder-head" data-week-toggle="${wn}">
+            <div>
+              <div class="week-folder-title">📁 שבוע ${wn}</div>
+              <div class="week-folder-sub">${startLbl && endLbl ? `${startLbl.dateStr} - ${endLbl.dateStr}` : ''}</div>
             </div>
-            ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : (exs.length ? `<span class="badge">${exs.length} תרגילים</span>` : '')}
-            <button class="icon-btn" data-trainee-move="${d.id}" data-daynum="${d.day_number}" title="החלפת יום" onclick="event.stopPropagation()">↕</button>
-            ${PROFILE.can_self_edit ? `<button class="btn ghost small" data-self-manage-ex="${d.id}" onclick="event.stopPropagation()">✎ ניהול תרגילים</button>` : ''}
-            ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
+            <div style="display:flex;align-items:center;gap:10px;">
+              ${workDaysInWeek.length ? `<span class="badge" style="background:${doneInWeek===workDaysInWeek.length?'rgba(51,196,129,0.18)':'var(--blue-dim)'};color:${doneInWeek===workDaysInWeek.length?'var(--green)':'var(--blue-bright)'};">${doneInWeek}/${workDaysInWeek.length}</span>` : ''}
+              ${hasIncompletePast ? `<span title="יש אימונים שהוחמצו השבוע" style="color:var(--red);">⚠</span>` : ''}
+              <span class="chevron week-chevron">▾</span>
+            </div>
           </div>
-          ${!d.is_rest_day ? `<div class="day-card-body">
-            ${exs.length ? `<button class="btn ghost small" data-complete-all="${d.id}" style="width:100%;margin-bottom:10px;">✅ סיימתי את כל התרגילים</button>` : ''}
-            ${exs.map(ex => {
-              const last = findLastLoggedValues(ex.name, days, d.day_number);
-              return `
-              <div class="exercise-item ${ex.completed?'ex-done':''}" data-exid="${ex.id}" data-exname="${ex.name.replace(/"/g,'&quot;')}" data-daynum="${d.day_number}">
-                <div class="ex-name">${findLibraryInstructions(ex.name) ? `<span class="info-dot" data-instr="${ex.name.replace(/"/g,'&quot;')}">i</span>` : ''}<span data-history="${ex.name.replace(/"/g,'&quot;')}" style="cursor:pointer;text-decoration:underline dotted;">${ex.name} <span style="font-size:11px;color:var(--blue-bright);">📈 היסטוריה</span></span></div>
-                <div class="ex-target">יעד: ${ex.target_sets ?? '—'} סטים × ${ex.target_reps ?? '—'} חזרות${ex.target_weight_kg!=null ? ` · ${ex.target_weight_kg} ק"ג` : ''}</div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-                  ${ex.video_url ? `<button class="video-link-btn" data-watch="${ex.video_url.replace(/"/g,'&quot;')}">▶ צפייה בסרטון הדרכה</button>` : ''}
-                  <button class="video-link-btn" data-swap-ex="${ex.id}" data-ex-name="${ex.name.replace(/"/g,'&quot;')}" style="background:var(--bg-elevated);color:var(--muted);">🔄 החלפת תרגיל</button>
-                </div>
-                ${last ? `<button class="same-last-btn" data-samelast="${ex.id}" data-sets="${last.sets ?? ''}" data-reps="${(last.reps||'').replace(/"/g,'&quot;')}" data-weight="${last.weight ?? ''}">🔁 כמו בפעם הקודמת (${last.weight ?? '—'} ק"ג × ${last.reps ?? '—'})</button>` : ''}
-                <div class="ex-log-grid">
-                  <div class="f"><label>סטים בפועל</label><input type="number" class="ex-sets" value="${ex.actual_sets ?? ''}"></div>
-                  <div class="f"><label>חזרות בפועל</label><input class="ex-reps" value="${ex.actual_reps ?? ''}"></div>
-                  <div class="f"><label>ק"ג בפועל</label><input type="number" step="0.5" class="ex-weight" value="${ex.actual_weight_kg ?? ''}"></div>
-                  <button class="btn small ex-save">${ex.completed ? '✓ עודכן' : 'שמירה'}</button>
-                </div>
-              </div>`;
-            }).join('')}
-            <div style="margin-top:12px;">
-              <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">הערה/שאלה למאמן על היום הזה</label>
-              <textarea class="trainee-note-input" data-noteday="${d.id}" rows="2" placeholder="לדוגמה: הרגשתי כאב בברך בסקוואט...">${d.trainee_note || ''}</textarea>
-              <button class="btn ghost small note-save-btn" data-noteday="${d.id}" style="margin-top:6px;">שמירת הערה</button>
-            </div>
-          </div>` : ''}
+          <div class="week-folder-body">
+            ${weekDays.map(d => renderTraineeDayCardHtml(d, program, days, todaysDay)).join('')}
+          </div>
         </div>`;
-      }).join('') : `<div class="empty">${logoSVG(46)}<div>אין עדיין תוכנית פעילה</div></div>`}
-    </div>
+      }).join('');
+    })()}
   `;
 
   const reminderBtn = document.getElementById('reminderLogBtn');
@@ -2541,6 +2588,8 @@ async function renderTraineeHome(){
     todayBtn.onclick = () => {
       const card = document.querySelector(`[data-daycard="${todaysDay.id}"]`);
       if(card){
+        const folder = card.closest('.week-folder');
+        if(folder) folder.classList.add('expanded');
         card.classList.add('expanded');
         card.scrollIntoView({ behavior:'smooth', block:'center' });
         card.style.outline = '2px solid var(--blue-bright)';
@@ -2553,6 +2602,13 @@ async function renderTraineeHome(){
     head.onclick = () => {
       const card = document.querySelector(`[data-daycard="${head.getAttribute('data-toggle')}"]`);
       if(card && card.querySelector('.day-card-body')) card.classList.toggle('expanded');
+    };
+  });
+
+  document.querySelectorAll('[data-week-toggle]').forEach(head => {
+    head.onclick = () => {
+      const folder = head.closest('.week-folder');
+      if(folder) folder.classList.toggle('expanded');
     };
   });
 
