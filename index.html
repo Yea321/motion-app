@@ -338,6 +338,13 @@
   }
   .rest-timer-fab:active{transform:translateY(-50%) scale(0.92);}
 
+  .playlist-fab{
+    position:fixed;top:calc(50% - 66px);left:10px;width:52px;height:52px;border-radius:50%;
+    background:var(--bg-card);border:2px solid var(--blue-bright);color:var(--blue-bright);font-size:20px;
+    display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,0.4);z-index:79;cursor:pointer;
+  }
+  .playlist-fab:active{transform:scale(0.92);}
+
   .rest-timer-bar{
     position:fixed;top:50%;left:10px;transform:translateY(-50%);background:var(--bg-card);border:2px solid var(--blue);border-radius:16px;
     padding:14px 12px;z-index:80;width:120px;
@@ -759,6 +766,121 @@ function removeTimerFab(){
   if(fab) fab.remove();
 }
 
+let PLAYLIST_LIBRARY = null;
+async function getPlaylistLibrary(forceRefresh){
+  if(PLAYLIST_LIBRARY && !forceRefresh) return PLAYLIST_LIBRARY;
+  try{
+    PLAYLIST_LIBRARY = await rest('playlists', { query:`?select=*&order=category.asc,name.asc` }) || [];
+  }catch(e){ PLAYLIST_LIBRARY = []; }
+  return PLAYLIST_LIBRARY;
+}
+
+function renderPlaylistFab(){
+  if(!PROFILE || PROFILE.role !== 'trainee') return;
+  if(document.getElementById('playlistFabBtn')) return;
+  const fab = document.createElement('button');
+  fab.id = 'playlistFabBtn';
+  fab.className = 'playlist-fab';
+  fab.title = 'ספריית פלייליסטים';
+  fab.textContent = '🎵';
+  fab.onclick = () => openPlaylistLibraryModal();
+  document.body.appendChild(fab);
+}
+function removePlaylistFab(){
+  const fab = document.getElementById('playlistFabBtn');
+  if(fab) fab.remove();
+}
+
+async function openPlaylistLibraryModal(){
+  const lib = await getPlaylistLibrary();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>🎵 ספריית פלייליסטים</h3>
+      <div class="lib-list">
+        ${lib.length ? lib.map(p => `
+          <div class="lib-item" data-play="${p.id}">
+            <div class="lib-name">${p.name}</div>
+            ${p.category ? `<div class="lib-cat">${p.category}</div>` : ''}
+          </div>`).join('') : `<div class="empty" style="padding:20px;">המאמן/ת שלך עדיין לא הוסיף/ה פלייליסטים לספרייה.</div>`}
+      </div>
+      <div class="modal-actions"><button class="btn ghost full" id="plLibClose">סגירה</button></div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('plLibClose').onclick = () => bg.remove();
+  bg.querySelectorAll('[data-play]').forEach(el => {
+    el.onclick = () => {
+      const item = lib.find(p => p.id === el.getAttribute('data-play'));
+      bg.remove();
+      if(item) openPlaylistModal(item.url);
+    };
+  });
+}
+
+function openManagePlaylistsModal(){
+  getPlaylistLibrary().then(lib => {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    function renderList(){
+      bg.querySelector('#plManageList').innerHTML = lib.length ? lib.map(p => `
+        <div class="lib-item" style="display:flex;justify-content:space-between;align-items:center;cursor:default;">
+          <div><div class="lib-name">${p.name}</div>${p.category ? `<div class="lib-cat">${p.category}</div>` : ''}</div>
+          <button class="icon-btn" data-del-playlist="${p.id}" style="width:30px;height:30px;">✕</button>
+        </div>`).join('') : `<div class="empty" style="padding:16px;">אין פלייליסטים עדיין</div>`;
+      bg.querySelectorAll('[data-del-playlist]').forEach(btn => {
+        btn.onclick = async () => {
+          try{
+            await rest('playlists', { method:'DELETE', query:`?id=eq.${btn.getAttribute('data-del-playlist')}` });
+            const idx = lib.findIndex(p=>p.id===btn.getAttribute('data-del-playlist'));
+            if(idx>-1) lib.splice(idx,1);
+            await getPlaylistLibrary(true);
+            renderList();
+            showToast('הוסר מהספרייה');
+          }catch(e){ showToast(e.message, true); }
+        };
+      });
+    }
+    bg.innerHTML = `
+      <div class="modal">
+        <h3>ניהול ספריית פלייליסטים</h3>
+        <p class="muted" style="font-size:12px;">כל פלייליסט שתוסיפי כאן יהיה זמין לכל המתאמנים שלך דרך כפתור ה-🎵 בצד המסך.</p>
+        <div class="field"><label>שם הפלייליסט</label><input id="plName" placeholder="לדוגמה: אנרגטי לאימון כוח"></div>
+        <div class="field"><label>קטגוריה (אופציונלי)</label><input id="plCat" placeholder="לדוגמה: אנרגטי, רגוע, קרדיו"></div>
+        <div class="field"><label>קישור (Spotify / YouTube)</label><input id="plUrl" placeholder="https://open.spotify.com/playlist/..."></div>
+        <button class="btn full" id="plAddBtn" style="margin-bottom:16px;">+ הוספה לספרייה</button>
+        <div id="plAddErr" class="error hidden"></div>
+        <h3>הפלייליסטים הקיימים</h3>
+        <div id="plManageList" class="lib-list"></div>
+        <div class="modal-actions"><button class="btn ghost full" id="plManageClose">סגירה</button></div>
+      </div>`;
+    document.body.appendChild(bg);
+    renderList();
+    document.getElementById('plManageClose').onclick = () => bg.remove();
+    document.getElementById('plAddBtn').onclick = async () => {
+      const name = document.getElementById('plName').value.trim();
+      const url = document.getElementById('plUrl').value.trim();
+      const errEl = document.getElementById('plAddErr');
+      if(!name || !url){ errEl.textContent = 'נא למלא שם וקישור.'; errEl.classList.remove('hidden'); return; }
+      try{
+        const created = await rest('playlists', { method:'POST', body:{
+          name, url, category: document.getElementById('plCat').value.trim() || null
+        }, prefer:'return=representation' });
+        if(created && created[0]) lib.push(created[0]);
+        document.getElementById('plName').value = '';
+        document.getElementById('plCat').value = '';
+        document.getElementById('plUrl').value = '';
+        errEl.classList.add('hidden');
+        renderList();
+        showToast('נוסף לספרייה');
+      }catch(e){
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+      }
+    };
+  });
+}
+
 function findLastLoggedValues(exerciseName, allDays, beforeDayNumber){
   const norm = s => (s||'').trim().toLowerCase();
   const matches = [];
@@ -934,6 +1056,32 @@ function openWelcomeModal(role, coachName){
       }catch(e){ /* לא קריטי אם זה נכשל - פשוט יופיע שוב בפעם הבאה */ }
     }
   };
+}
+
+function openPlaylistModal(url){
+  const bg = document.createElement('div');
+  bg.className = 'video-modal-bg';
+  let inner = '';
+  let tall = false;
+  const spotify = url.match(/open\.spotify\.com\/(track|album|playlist|artist)\/([a-zA-Z0-9]+)/);
+  const ytPlaylist = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+  const ytVideo = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{6,})/);
+  if(spotify){
+    tall = true;
+    inner = `<iframe src="https://open.spotify.com/embed/${spotify[1]}/${spotify[2]}" allow="autoplay; encrypted-media; clipboard-write; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+  } else if(ytPlaylist){
+    inner = `<iframe src="https://www.youtube.com/embed/videoseries?list=${ytPlaylist[1]}&autoplay=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  } else if(ytVideo){
+    inner = `<iframe src="https://www.youtube.com/embed/${ytVideo[1]}?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  } else {
+    bg.innerHTML = `<div class="video-modal-fallback"><p style="margin-bottom:14px;">לא הצלחנו להטמיע נגן לקישור הזה.</p><a href="${url}" target="_blank" rel="noopener" class="btn">פתיחה בטאב חדש ↗</a></div>`;
+    document.body.appendChild(bg);
+    bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+    return;
+  }
+  bg.innerHTML = `<div class="video-modal-inner" style="${tall ? 'aspect-ratio:auto;height:80vh;max-width:420px;' : ''}">${inner}</div>`;
+  document.body.appendChild(bg);
+  bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
 }
 
 function openVideoModal(url){
@@ -1113,6 +1261,7 @@ function bindShellNav(handlers){
     el.onclick = () => {
       stopRestTimer();
       removeTimerFab();
+      removePlaylistFab();
       const key = el.getAttribute('data-nav');
       if(key === 'logout'){
         SESSION = null; PROFILE = null; STATE = { view:'auth', activeTraineeId:null, traineeCache:{} };
@@ -1200,7 +1349,10 @@ async function renderCoachHome(){
         <h2 class="page-title">המתאמנים שלי</h2>
         <p class="page-sub">${trainees.length} מתאמנים פעילים</p>
       </div>
-      <button class="btn" id="addTraineeBtn">+ הוספת מתאמן</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn ghost small" id="managePlaylistsBtn">🎵 ניהול פלייליסטים</button>
+        <button class="btn" id="addTraineeBtn">+ הוספת מתאמן</button>
+      </div>
     </div>
     ${trainees.length > 4 ? `<input class="search-input" id="traineeSearch" placeholder="🔍 חיפוש מתאמן לפי שם...">` : ''}
     <div class="panel" id="traineesPanel">${rowsHtml}</div>
@@ -1218,6 +1370,7 @@ async function renderCoachHome(){
   }
 
   document.getElementById('addTraineeBtn').onclick = openAddTraineeModal;
+  document.getElementById('managePlaylistsBtn').onclick = openManagePlaylistsModal;
   document.querySelectorAll('[data-tid]').forEach(el => {
     el.onclick = () => { STATE.activeTraineeId = el.getAttribute('data-tid'); renderCoachTraineeDetail(); };
   });
@@ -2617,7 +2770,7 @@ function renderTraineeDayCardHtml(d, program, days, todaysDay){
       ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
     </div>
     ${!d.is_rest_day ? `<div class="day-card-body">
-      ${d.playlist_url ? `<a href="${d.playlist_url}" target="_blank" rel="noopener" class="video-link-btn" style="display:inline-flex;margin-bottom:10px;text-decoration:none;" onclick="event.stopPropagation()">🎵 פתיחת פלייליסט האימון</a>` : ''}
+      ${d.playlist_url ? `<button type="button" class="video-link-btn" data-open-playlist="${d.playlist_url.replace(/"/g,'&quot;')}" style="display:inline-flex;margin-bottom:10px;" onclick="event.stopPropagation()">🎵 פתיחת פלייליסט האימון</button>` : ''}
       ${exs.length ? `<button class="btn ghost small" data-complete-all="${d.id}" style="width:100%;margin-bottom:10px;">✅ סיימתי את כל התרגילים</button>` : ''}
       ${exs.map(ex => {
         const last = findLastLoggedValues(ex.name, days, d.day_number);
@@ -2887,6 +3040,13 @@ async function renderTraineeHome(){
     };
   });
 
+  document.querySelectorAll('[data-open-playlist]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      openPlaylistModal(btn.getAttribute('data-open-playlist'));
+    };
+  });
+
   document.querySelectorAll('[data-swap-ex]').forEach(btn => {
     btn.onclick = (ev) => {
       ev.stopPropagation();
@@ -3014,6 +3174,7 @@ async function renderTraineeHome(){
   });
   removeTimerFab();
   renderTimerFab();
+  renderPlaylistFab();
   maybeShowWelcome();
 }
 
@@ -3454,6 +3615,7 @@ async function openLogProgressModal(){
 function render(){
   stopRestTimer();
   removeTimerFab();
+  removePlaylistFab();
   if(STATE.view === 'config') return renderConfig();
   if(STATE.view === 'auth') return renderAuth();
   if(STATE.view === 'coach') return renderCoachHome();
