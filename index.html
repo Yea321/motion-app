@@ -345,6 +345,16 @@
   }
   .playlist-fab:active{transform:scale(0.92);}
 
+  .mini-player-bar{
+    position:fixed;bottom:0;right:0;left:0;background:var(--bg-card);border-top:2px solid var(--blue-bright);
+    z-index:85;box-shadow:0 -8px 24px rgba(0,0,0,0.4);animation:fadeUp .25s ease both;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .mini-player-bar .mp-head{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;}
+  .mini-player-bar .mp-title{font-size:12px;color:var(--blue-bright);font-weight:700;}
+  .mini-player-bar .mp-close{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 8px;}
+  .mini-player-bar iframe{width:100%;height:80px;border:none;display:block;}
+
   .rest-timer-bar{
     position:fixed;top:50%;left:10px;transform:translateY(-50%);background:var(--bg-card);border:2px solid var(--blue);border-radius:16px;
     padding:14px 12px;z-index:80;width:120px;
@@ -1058,30 +1068,38 @@ function openWelcomeModal(role, coachName){
   };
 }
 
+function closeMiniPlayer(){
+  const bar = document.getElementById('miniPlayerBar');
+  if(bar) bar.remove();
+}
 function openPlaylistModal(url){
-  const bg = document.createElement('div');
-  bg.className = 'video-modal-bg';
+  closeMiniPlayer();
   let inner = '';
-  let tall = false;
   const spotify = url.match(/open\.spotify\.com\/(track|album|playlist|artist)\/([a-zA-Z0-9]+)/);
   const ytPlaylist = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
   const ytVideo = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{6,})/);
   if(spotify){
-    tall = true;
-    inner = `<iframe src="https://open.spotify.com/embed/${spotify[1]}/${spotify[2]}" allow="autoplay; encrypted-media; clipboard-write; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+    inner = `<iframe src="https://open.spotify.com/embed/${spotify[1]}/${spotify[2]}?theme=0" allow="autoplay; encrypted-media; clipboard-write; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
   } else if(ytPlaylist){
-    inner = `<iframe src="https://www.youtube.com/embed/videoseries?list=${ytPlaylist[1]}&autoplay=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    inner = `<iframe src="https://www.youtube.com/embed/videoseries?list=${ytPlaylist[1]}&autoplay=1" allow="autoplay; encrypted-media; picture-in-picture"></iframe>`;
   } else if(ytVideo){
-    inner = `<iframe src="https://www.youtube.com/embed/${ytVideo[1]}?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    inner = `<iframe src="https://www.youtube.com/embed/${ytVideo[1]}?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture"></iframe>`;
   } else {
-    bg.innerHTML = `<div class="video-modal-fallback"><p style="margin-bottom:14px;">לא הצלחנו להטמיע נגן לקישור הזה.</p><a href="${url}" target="_blank" rel="noopener" class="btn">פתיחה בטאב חדש ↗</a></div>`;
-    document.body.appendChild(bg);
-    bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+    showToast('לא הצלחנו לזהות את סוג הקישור - נסי לפתוח ישירות', true);
+    window.open(url, '_blank');
     return;
   }
-  bg.innerHTML = `<div class="video-modal-inner" style="${tall ? 'aspect-ratio:auto;height:80vh;max-width:420px;' : ''}">${inner}</div>`;
-  document.body.appendChild(bg);
-  bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+  const bar = document.createElement('div');
+  bar.className = 'mini-player-bar';
+  bar.id = 'miniPlayerBar';
+  bar.innerHTML = `
+    <div class="mp-head">
+      <span class="mp-title">🎵 מתנגן עכשיו</span>
+      <button class="mp-close" id="miniPlayerClose">✕ סגירה</button>
+    </div>
+    ${inner}`;
+  document.body.appendChild(bar);
+  document.getElementById('miniPlayerClose').onclick = closeMiniPlayer;
 }
 
 function openVideoModal(url){
