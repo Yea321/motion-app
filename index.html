@@ -1138,6 +1138,7 @@ function progressRing(pct, size){
     <circle class="ring-fg" cx="${size/2}" cy="${size/2}" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${offset}"/>
   </svg>`;
 }
+
 function logoSVG(size){
   size = size || 34;
   return `
@@ -1891,6 +1892,12 @@ async function renderCoachTraineeDetail(){
       };
     });
   }
+  document.querySelectorAll('[data-week-toggle-coach]').forEach(head => {
+    head.onclick = () => {
+      const folder = head.closest('.week-folder');
+      if(folder) folder.classList.toggle('expanded');
+    };
+  });
   document.querySelectorAll('[data-manage-ex]').forEach(btn => {
     btn.onclick = (ev) => {
       ev.stopPropagation();
@@ -1933,19 +1940,53 @@ async function renderCoachTraineeDetail(){
 function renderDaysList(days, startDate){
   if(!days.length) return `<div class="empty">אין ימים בתוכנית עדיין</div>`;
   const sorted = days.slice().sort((a,b)=>a.day_number-b.day_number);
-  return sorted.map(d => {
-    const exCount = (d.exercises || []).length;
-    const lbl = startDate ? dayLabel(startDate, d.day_number) : null;
+  const todayStr = new Date().toDateString();
+
+  const weeksMap = {};
+  sorted.forEach(d => {
+    const wn = Math.ceil(d.day_number / 7);
+    if(!weeksMap[wn]) weeksMap[wn] = [];
+    weeksMap[wn].push(d);
+  });
+  const weekNums = Object.keys(weeksMap).map(Number).sort((a,b)=>a-b);
+  const currentWeekNum = startDate ? Math.ceil((Math.floor((Date.now() - new Date(startDate).getTime())/86400000) + 1) / 7) : null;
+
+  return weekNums.map(wn => {
+    const weekDays = weeksMap[wn];
+    const startLbl = startDate ? dayLabel(startDate, weekDays[0].day_number) : null;
+    const endLbl = startDate ? dayLabel(startDate, weekDays[weekDays.length-1].day_number) : null;
+    const workDaysInWeek = weekDays.filter(d=>!d.is_rest_day);
+    const doneInWeek = workDaysInWeek.filter(d=>d.completed).length;
+    const isCurrentWeek = wn === currentWeekNum;
     return `
-    <div class="day-row ${d.completed?'done':''} ${d.is_rest_day?'rest':''}" data-open-day="${d.id}" style="cursor:${d.is_rest_day?'default':'pointer'};">
-      <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
-      <div class="day-info">
-        <div class="t">${d.is_rest_day ? 'יום מנוחה' : `${exCount} תרגילים`}</div>
+    <div class="panel week-folder ${isCurrentWeek?'expanded':''}" style="margin-bottom:10px;padding:0;overflow:hidden;">
+      <div class="week-folder-head" data-week-toggle-coach="${wn}">
+        <div>
+          <div class="week-folder-title">📁 שבוע ${wn}</div>
+          <div class="week-folder-sub">${startLbl && endLbl ? `${startLbl.dateStr} - ${endLbl.dateStr}` : ''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${workDaysInWeek.length ? `<span class="badge" style="background:${doneInWeek===workDaysInWeek.length?'rgba(51,196,129,0.18)':'var(--blue-dim)'};color:${doneInWeek===workDaysInWeek.length?'var(--green)':'var(--blue-bright)'};">${doneInWeek}/${workDaysInWeek.length}</span>` : ''}
+          <span class="chevron week-chevron">▾</span>
+        </div>
       </div>
-      ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : `<button class="btn ghost small" data-manage-ex="${d.id}">✎ תרגילים</button>`}
-      ${d.trainee_note ? `<span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);" title="${d.trainee_note.replace(/"/g,'&quot;')}">💬 הערה</span>` : ''}
-      <button class="icon-btn" data-move-day="${d.id}" data-daynum="${d.day_number}" title="העברה ליום אחר">↕</button>
-      ${d.completed ? `<span class="badge" style="background:#0F3D2A;color:var(--green);">בוצע</span>` : ''}
+      <div class="week-folder-body">
+        ${weekDays.map(d => {
+          const exCount = (d.exercises || []).length;
+          const lbl = startDate ? dayLabel(startDate, d.day_number) : null;
+          return `
+          <div class="day-row ${d.completed?'done':''} ${d.is_rest_day?'rest':''}" data-open-day="${d.id}" style="cursor:${d.is_rest_day?'default':'pointer'};">
+            <div class="day-num" style="min-width:64px;">${lbl ? `${lbl.weekday}<div style="font-size:10px;color:var(--muted);font-weight:600;">${lbl.dateStr}</div>` : `D${d.day_number}`}</div>
+            <div class="day-info">
+              <div class="t">${d.is_rest_day ? 'יום מנוחה' : `${exCount} תרגילים`}</div>
+            </div>
+            ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : `<button class="btn ghost small" data-manage-ex="${d.id}">✎ תרגילים</button>`}
+            ${d.trainee_note ? `<span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);" title="${d.trainee_note.replace(/"/g,'&quot;')}">💬 הערה</span>` : ''}
+            <button class="icon-btn" data-move-day="${d.id}" data-daynum="${d.day_number}" title="העברה ליום אחר">↕</button>
+            ${d.completed ? `<span class="badge" style="background:#0F3D2A;color:var(--green);">בוצע</span>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
     </div>`;
   }).join('');
 }
