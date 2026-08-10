@@ -427,6 +427,7 @@ async function tryRestoreSession(){
     }
     if(!rows || !rows.length) throw new Error('no profile');
     PROFILE = rows[0];
+    updateLastLogin();
     STATE.view = (PROFILE.role === 'trainee' && PROFILE.is_suspended) ? 'suspended' : (PROFILE.role === 'coach' ? 'coach' : 'trainee');
     return true;
   }catch(e){
@@ -434,6 +435,24 @@ async function tryRestoreSession(){
     clearLocal();
     return false;
   }
+}
+
+function updateLastLogin(){
+  if(!PROFILE) return;
+  rest('profiles', { method:'PATCH', query:`?id=eq.${PROFILE.id}`, body:{ last_login_at: new Date().toISOString() } }).catch(()=>{});
+}
+function formatLastLogin(ts){
+  if(!ts) return 'מעולם לא התחבר/ה';
+  const d = new Date(ts);
+  const diffMin = Math.floor((Date.now() - d.getTime())/60000);
+  if(diffMin < 1) return 'כרגע';
+  if(diffMin < 60) return `לפני ${diffMin} דק'`;
+  const diffHr = Math.floor(diffMin/60);
+  if(diffHr < 24) return `לפני ${diffHr} שע'`;
+  const diffDay = Math.floor(diffHr/24);
+  if(diffDay === 1) return 'אתמול';
+  if(diffDay < 30) return `לפני ${diffDay} ימים`;
+  return d.toLocaleDateString('he-IL');
 }
 
 function showToast(msg, isError){
@@ -1262,6 +1281,7 @@ function renderAuth(){
       if(!rows || !rows.length) throw new Error('לא נמצא פרופיל למשתמש זה.');
       PROFILE = rows[0];
       saveLocal();
+      updateLastLogin();
       STATE.view = (PROFILE.role === 'trainee' && PROFILE.is_suspended) ? 'suspended' : (PROFILE.role === 'coach' ? 'coach' : 'trainee');
       render();
     }catch(e){
@@ -1375,6 +1395,7 @@ async function renderCoachHome(){
           <div class="mini-row">
             <span>${s.lastW!=null ? `⚖️ <b>${s.lastW}</b> ק"ג` : 'אין מדידות עדיין'}</span>
             ${s.adherence!=null ? `<span>💪 <b>${s.adherence}%</b> עמידה בתוכנית</span>` : ''}
+            <span>🕐 ${formatLastLogin(t.last_login_at)}</span>
             ${(s.daysSince===null || s.daysSince>=7) ? `<span style="color:var(--red);">⚠ ${s.daysSince===null?'אין פעילות':`${s.daysSince} ימים ללא עדכון`}</span>` : ''}
           </div>
         </div>
