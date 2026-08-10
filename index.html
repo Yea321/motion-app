@@ -655,6 +655,40 @@ function exportCSV(filename, headers, rows){
 }
 
 let REST_TIMER_INTERVAL = null;
+function playDingSound(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 1200;
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.22);
+  }catch(e){}
+}
+function fireConfetti(big){
+  const colors = ['#2F6FED','#5B93FF','#33C481','#F4F5F7','#FFD166'];
+  const count = big ? 90 : 40;
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    const size = 6 + Math.random()*6;
+    el.style.cssText = `position:fixed;top:-20px;left:${Math.random()*100}vw;width:${size}px;height:${size*0.4}px;
+      background:${colors[Math.floor(Math.random()*colors.length)]};z-index:200;pointer-events:none;
+      border-radius:2px;opacity:0.95;`;
+    const duration = 1800 + Math.random()*1400;
+    const drift = (Math.random()-0.5) * 200;
+    const rotate = Math.random()*720 - 360;
+    document.body.appendChild(el);
+    const anim = el.animate([
+      { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
+      { transform: `translate(${drift}px, ${window.innerHeight + 40}px) rotate(${rotate}deg)`, opacity: 0.9 }
+    ], { duration, easing:'cubic-bezier(.25,.46,.45,.94)' });
+    anim.onfinish = () => el.remove();
+  }
+}
+
 function playTimerEndSound(){
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1549,7 +1583,7 @@ async function renderCoachTraineeDetail(){
               <div class="meal-head">
                 <div class="meal-name">${m.name}</div>
                 <div style="display:flex;align-items:center;gap:10px;">
-                  ${(m.calories || m.protein_g) ? `<div class="meal-macros">${m.calories ? m.calories+' קק"ל' : ''}${m.calories && m.protein_g ? ' · ' : ''}${m.protein_g ? m.protein_g+'g חלבון' : ''}</div>` : ''}
+                  ${(m.calories || m.protein_g || m.carbs_g || m.fat_g) ? `<div class="meal-macros">${[m.calories ? m.calories+' קק"ל' : null, m.protein_g ? m.protein_g+'g חלבון' : null, m.carbs_g ? m.carbs_g+'g פחמ׳' : null, m.fat_g ? m.fat_g+'g שומן' : null].filter(Boolean).join(' · ')}</div>` : ''}
                   <button class="icon-btn" data-edit-meal="${m.id}" title="עריכה" style="width:28px;height:28px;font-size:13px;">✎</button>
                   <button class="icon-btn" data-delete-meal="${m.id}" title="מחיקה" style="width:28px;height:28px;font-size:13px;">✕</button>
                 </div>
@@ -2100,6 +2134,7 @@ async function openAddDayModal(programId, programStartDate){
       <div class="field"><label>מספר יום</label><input id="dNum" type="number" min="1"><div id="dNumPreview" class="muted" style="font-size:12px;margin-top:5px;"></div></div>
       <div class="field"><label>כותרת</label><input id="dTitle" placeholder="לדוגמה: פלג גוף עליון"></div>
       <div class="field"><label>תיאור כללי (אופציונלי)</label><textarea id="dDesc" rows="2" placeholder="הערות כלליות ליום..."></textarea></div>
+      <div class="field"><label>🎵 קישור פלייליסט לאימון (אופציונלי)</label><input id="dPlaylist" placeholder="קישור Spotify/YouTube"></div>
       <div class="field"><label><input type="checkbox" id="dRest" style="width:auto;margin-left:8px;">יום מנוחה</label></div>
       <button type="button" class="add-exercise-link" id="quickCardioBtn" style="margin-bottom:16px;">🏃 מלא כיום אירובי (הליכה/ריצה/אופניים)</button>
       <div class="field" id="exercisesField">
@@ -2168,6 +2203,7 @@ async function openAddDayModal(programId, programStartDate){
         program_id: programId, day_number: dayNum,
         title: document.getElementById('dTitle').value.trim(),
         description: document.getElementById('dDesc').value.trim(),
+        playlist_url: document.getElementById('dPlaylist').value.trim() || null,
         is_rest_day: isRest
       }, prefer:'return=representation' });
       const newDay = created && created[0];
@@ -2238,6 +2274,7 @@ async function openManageExercisesModal(day, onDone){
       ${templatePickerHtml(templates)}
       <div class="field"><label>כותרת היום</label><input id="mTitle" value="${(day.title||'').replace(/"/g,'&quot;')}"></div>
       <div class="field"><label>תיאור כללי (אופציונלי)</label><textarea id="mDesc" rows="2">${day.description||''}</textarea></div>
+      <div class="field"><label>🎵 קישור פלייליסט לאימון (אופציונלי)</label><input id="mPlaylist" placeholder="קישור Spotify/YouTube" value="${(day.playlist_url||'').replace(/"/g,'&quot;')}"></div>
       <div class="field">
         <label>תרגילים ביום זה</label>
         <div id="mexRowsWrap"></div>
@@ -2279,7 +2316,8 @@ async function openManageExercisesModal(day, onDone){
     try{
       await rest('program_days', { method:'PATCH', query:`?id=eq.${day.id}`, body:{
         title: document.getElementById('mTitle').value.trim(),
-        description: document.getElementById('mDesc').value.trim()
+        description: document.getElementById('mDesc').value.trim(),
+        playlist_url: document.getElementById('mPlaylist').value.trim() || null
       }});
       for(const id of deletedIds){
         await rest('exercises', { method:'DELETE', query:`?id=eq.${id}` });
@@ -2374,6 +2412,8 @@ function openAddMealModal(planId, existingMeal){
       <div class="grid cols-2">
         <div class="field"><label>קלוריות (אופציונלי)</label><input id="mCal" type="number" value="${m.calories ?? ''}"></div>
         <div class="field"><label>חלבון בגרם (אופציונלי)</label><input id="mProt" type="number" value="${m.protein_g ?? ''}"></div>
+        <div class="field"><label>פחמימות בגרם (אופציונלי)</label><input id="mCarb" type="number" value="${m.carbs_g ?? ''}"></div>
+        <div class="field"><label>שומן בגרם (אופציונלי)</label><input id="mFat" type="number" value="${m.fat_g ?? ''}"></div>
       </div>
       <div class="field"><label>פירוט (מזון וכמויות)</label><textarea id="mDesc" rows="4" placeholder="לדוגמה: 3 ביצים, פרוסת לחם מלא, אבוקדו...">${m.description || ''}</textarea></div>
       <div id="mErr" class="error hidden"></div>
@@ -2392,7 +2432,7 @@ function openAddMealModal(planId, existingMeal){
       const num = id => { const v = document.getElementById(id).value; return v===''?null:parseInt(v); };
       if(existingMeal){
         await rest('meals', { method:'PATCH', query:`?id=eq.${existingMeal.id}`, body:{
-          name, calories: num('mCal'), protein_g: num('mProt'),
+          name, calories: num('mCal'), protein_g: num('mProt'), carbs_g: num('mCarb'), fat_g: num('mFat'),
           description: document.getElementById('mDesc').value.trim()
         }});
       } else {
@@ -2400,7 +2440,7 @@ function openAddMealModal(planId, existingMeal){
         const nextIndex = existing.length ? Math.max(...existing.map(m=>m.order_index||0)) + 1 : 0;
         await rest('meals', { method:'POST', body:{
           plan_id: planId, order_index: nextIndex,
-          name, calories: num('mCal'), protein_g: num('mProt'),
+          name, calories: num('mCal'), protein_g: num('mProt'), carbs_g: num('mCarb'), fat_g: num('mFat'),
           description: document.getElementById('mDesc').value.trim()
         }});
       }
@@ -2417,6 +2457,105 @@ function openAddMealModal(planId, existingMeal){
 /* =====================================================================
    מסך מתאמן
    ===================================================================== */
+async function renderTraineeDashboard(){
+  const app = document.getElementById('app');
+  app.innerHTML = appShell(
+    [{key:'home', label:'🏠 בית'}, {key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    'home',
+    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div>`
+  );
+  bindShellNav({ home: renderTraineeDashboard, program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+
+  let programs = [], plans = [];
+  try{
+    programs = await rest('programs', { query:`?trainee_id=eq.${PROFILE.id}&select=*,program_days(*,exercises(*))&order=start_date.desc` }) || [];
+  }catch(e){}
+  try{
+    plans = await rest('nutrition_plans', { query:`?trainee_id=eq.${PROFILE.id}&select=*&order=created_at.desc&limit=1` }) || [];
+  }catch(e){}
+
+  let program = programs[0] || null;
+  if(program) program = await autoExtendProgramIfNeeded(program);
+  const days = program ? (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number) : [];
+  const streak = calcStreak(days);
+  const daysLeft = program ? Math.max(0, program.duration_days - Math.floor((Date.now() - new Date(program.start_date).getTime())/86400000)) : null;
+  const todayStr = new Date().toDateString();
+  const todaysDay = program ? days.find(d => dayDate(program.start_date, d.day_number).toDateString() === todayStr) : null;
+  const plan = plans[0] || null;
+
+  let lastEntryDate = null;
+  try{
+    const recent = await rest('progress_entries', { query:`?trainee_id=eq.${PROFILE.id}&select=entry_date&order=entry_date.desc&limit=1` });
+    if(recent && recent.length) lastEntryDate = new Date(recent[0].entry_date);
+  }catch(e){}
+  const daysSinceEntry = lastEntryDate ? Math.floor((Date.now()-lastEntryDate.getTime())/86400000) : null;
+
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+  const workoutsThisWeek = days.filter(d => !d.is_rest_day && d.completed_at && new Date(d.completed_at) >= weekAgo).length;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? 'לילה טוב' : hour < 12 ? 'בוקר טוב' : hour < 18 ? 'צהריים טובים' : 'ערב טוב';
+
+  document.querySelector('.main').innerHTML = `
+    <h2 class="page-title" style="margin-bottom:4px;">${greeting}, ${PROFILE.full_name.split(' ')[0]}! 👋</h2>
+    <p class="page-sub">${streak>0 ? `${streak>=90?'🏆':streak>=60?'🌟':streak>=30?'💎':'🔥'} ${streak} ימי רצף · ` : ''}${daysLeft!=null ? `${daysLeft} ימים נשארו בתוכנית` : ''}</p>
+
+    ${(daysSinceEntry===null || daysSinceEntry>=7) ? `
+    <div class="reminder-banner">
+      <span>📏 ${daysSinceEntry===null ? 'עדיין לא הזנת אף מדידה' : `לא הזנת מדידה כבר ${daysSinceEntry} ימים`} — כדאי לעדכן משקל והיקפים.</span>
+      <button class="btn small" id="dashLogBtn">לרישום מדידה</button>
+    </div>` : ''}
+
+    ${program && todaysDay && !todaysDay.is_rest_day ? `
+    <div class="panel" style="margin-bottom:16px;border-color:var(--blue);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">האימון של היום</div>
+          <div style="font-size:18px;font-weight:800;margin-top:4px;">${todaysDay.title || 'אימון'}</div>
+          <div class="muted" style="font-size:12.5px;margin-top:2px;">${(todaysDay.exercises||[]).length} תרגילים${todaysDay.completed ? ' · הושלם ✓' : ''}</div>
+        </div>
+        <button class="btn" id="dashTodayBtn">💪 פתיחה</button>
+      </div>
+    </div>` : program && todaysDay && todaysDay.is_rest_day ? `
+    <div class="panel" style="margin-bottom:16px;"><div style="text-align:center;color:var(--muted);font-size:14px;">😴 היום יום מנוחה - תתאוששי טוב!</div></div>
+    ` : ''}
+
+    <div class="grid cols-2" style="margin-bottom:16px;">
+      <div class="panel stat"><div class="v">${workoutsThisWeek}</div><div class="l">אימונים השבוע</div></div>
+      <div class="panel stat"><div class="v">${plan && plan.daily_calories ? plan.daily_calories : '—'}</div><div class="l">יעד קלוריות</div></div>
+    </div>
+
+    <div class="grid cols-2" style="margin-bottom:16px;">
+      <button class="btn ghost full" id="dashCardioBtn" style="padding:14px;">🏃 הוספת אירובי</button>
+      <button class="btn ghost full" id="dashNutritionBtn" style="padding:14px;">🍽 התפריט שלי</button>
+    </div>
+
+    ${!program ? `<div class="panel"><div class="empty">${logoSVG(46)}<div>המאמן/ת שלך עדיין לא בנה/תה עבורך תוכנית</div></div></div>` : ''}
+  `;
+
+  const dashLogBtn = document.getElementById('dashLogBtn');
+  if(dashLogBtn) dashLogBtn.onclick = () => openLogProgressModal();
+  const dashTodayBtn = document.getElementById('dashTodayBtn');
+  if(dashTodayBtn) dashTodayBtn.onclick = async () => {
+    await renderTraineeHome();
+    setTimeout(() => {
+      const card = document.querySelector(`[data-daycard="${todaysDay.id}"]`);
+      if(card){
+        const folder = card.closest('.week-folder');
+        if(folder) folder.classList.add('expanded');
+        card.classList.add('expanded');
+        card.scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    }, 50);
+  };
+  const dashCardioBtn = document.getElementById('dashCardioBtn');
+  if(dashCardioBtn) dashCardioBtn.onclick = () => { if(program) openAddCardioModal(program, days); else showToast('עדיין אין תוכנית פעילה', true); };
+  const dashNutritionBtn = document.getElementById('dashNutritionBtn');
+  if(dashNutritionBtn) dashNutritionBtn.onclick = renderTraineeNutrition;
+
+  maybeShowWelcome();
+}
+
 function renderTraineeDayCardHtml(d, program, days, todaysDay){
   const exs = (d.exercises || []).slice().sort((a,b)=>a.order_index-b.order_index);
   const lbl = program ? dayLabel(program.start_date, d.day_number) : null;
@@ -2436,6 +2575,7 @@ function renderTraineeDayCardHtml(d, program, days, todaysDay){
       ${!d.is_rest_day ? `<span class="chevron">▾</span>` : ''}
     </div>
     ${!d.is_rest_day ? `<div class="day-card-body">
+      ${d.playlist_url ? `<a href="${d.playlist_url}" target="_blank" rel="noopener" class="video-link-btn" style="display:inline-flex;margin-bottom:10px;text-decoration:none;" onclick="event.stopPropagation()">🎵 פתיחת פלייליסט האימון</a>` : ''}
       ${exs.length ? `<button class="btn ghost small" data-complete-all="${d.id}" style="width:100%;margin-bottom:10px;">✅ סיימתי את כל התרגילים</button>` : ''}
       ${exs.map(ex => {
         const last = findLastLoggedValues(ex.name, days, d.day_number);
@@ -2474,11 +2614,11 @@ function renderTraineeDayCardHtml(d, program, days, todaysDay){
 async function renderTraineeHome(){
   const app = document.getElementById('app');
   app.innerHTML = appShell(
-    [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    [{key:'home', label:'🏠 בית'}, {key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
     'program',
     `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
-  bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+  bindShellNav({ home: renderTraineeDashboard, program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
   let programs = [];
   try{
@@ -2791,9 +2931,11 @@ async function renderTraineeHome(){
         }});
         item.classList.add('ex-done');
         saveBtn.textContent = '✓ עודכן';
+        playDingSound();
         if(isPR){
           item.style.outline = '2px solid gold';
           showToast(`🏆 שיא אישי חדש! ${newWeight} ק"ג`);
+          fireConfetti(true);
         } else {
           showToast('התרגיל נשמר');
         }
@@ -2805,14 +2947,26 @@ async function renderTraineeHome(){
   document.querySelectorAll('.day-check').forEach(cb => {
     cb.onchange = async () => {
       try{
+        const dayId = cb.getAttribute('data-dayid');
         await rest('program_days', {
           method:'PATCH',
-          query:`?id=eq.${cb.getAttribute('data-dayid')}`,
+          query:`?id=eq.${dayId}`,
           body:{ completed: cb.checked, completed_at: cb.checked ? new Date().toISOString() : null }
         });
         showToast(cb.checked ? randomMotivation() : 'הסימון בוטל');
         const container = cb.closest('.day-card') || cb.closest('.day-row');
         if(container) container.classList.toggle('done', cb.checked);
+        if(cb.checked){
+          const thisDay = days.find(d => d.id === dayId);
+          if(thisDay){
+            const wn = Math.ceil(thisDay.day_number / 7);
+            const weekDays = days.filter(d => Math.ceil(d.day_number/7) === wn && !d.is_rest_day);
+            const weekDone = weekDays.every(d => d.id === dayId ? true : d.completed);
+            fireConfetti(weekDone && weekDays.length > 1);
+          } else {
+            fireConfetti(false);
+          }
+        }
       }catch(e){ showToast(e.message, true); cb.checked = !cb.checked; }
     };
   });
@@ -2824,11 +2978,11 @@ async function renderTraineeHome(){
 async function renderTraineeNutrition(){
   const app = document.getElementById('app');
   app.innerHTML = appShell(
-    [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    [{key:'home', label:'🏠 בית'}, {key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
     'nutrition',
     `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
-  bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+  bindShellNav({ home: renderTraineeDashboard, program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
   let plans = [];
   let logs = [];
@@ -2863,7 +3017,7 @@ async function renderTraineeNutrition(){
           <div class="meal-card">
             <div class="meal-head">
               <div class="meal-name">${m.name}</div>
-              ${(m.calories || m.protein_g) ? `<div class="meal-macros">${m.calories ? m.calories+' קק"ל' : ''}${m.calories && m.protein_g ? ' · ' : ''}${m.protein_g ? m.protein_g+'g חלבון' : ''}</div>` : ''}
+              ${(m.calories || m.protein_g || m.carbs_g || m.fat_g) ? `<div class="meal-macros">${[m.calories ? m.calories+' קק"ל' : null, m.protein_g ? m.protein_g+'g חלבון' : null, m.carbs_g ? m.carbs_g+'g פחמ׳' : null, m.fat_g ? m.fat_g+'g שומן' : null].filter(Boolean).join(' · ')}</div>` : ''}
             </div>
             ${m.description ? `<div class="meal-desc">${m.description}</div>` : ''}
           </div>`).join('') : `<div class="empty">עדיין לא נוספו ארוחות לתפריט</div>`}
@@ -2961,11 +3115,11 @@ function openAddDeviationModal(){
 async function renderTraineeProgress(){
   const app = document.getElementById('app');
   app.innerHTML = appShell(
-    [{key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+    [{key:'home', label:'🏠 בית'}, {key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
     'progress',
     `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
   );
-  bindShellNav({ program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+  bindShellNav({ home: renderTraineeDashboard, program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
 
   let entries = [];
   try{
@@ -3261,7 +3415,7 @@ function render(){
   if(STATE.view === 'config') return renderConfig();
   if(STATE.view === 'auth') return renderAuth();
   if(STATE.view === 'coach') return renderCoachHome();
-  if(STATE.view === 'trainee') return renderTraineeHome();
+  if(STATE.view === 'trainee') return renderTraineeDashboard();
   if(STATE.view === 'suspended') return renderSuspendedScreen();
 }
 
