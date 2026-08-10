@@ -105,9 +105,6 @@
 
   @media (max-width:820px){
     .shell{flex-direction:column;}
-    .sidebar{width:100%;flex-direction:row;align-items:center;justify-content:space-between;padding:14px 18px;border-left:none;border-bottom:1px solid var(--border);}
-    .sidebar .navwrap{display:flex;gap:6px;}
-    .sidebar .who{border-top:none;padding-top:0;display:none;}
     .main{padding:22px 18px;}
   }
 
@@ -198,7 +195,7 @@
 
   .bottom-nav{display:none;}
   @media (max-width:820px){
-    .sidebar .navwrap{display:none;}
+    .sidebar{display:none;}
     .bottom-nav{
       display:flex;position:fixed;bottom:0;right:0;left:0;background:var(--bg-elevated);
       border-top:1px solid var(--border);z-index:40;padding:8px 6px calc(8px + env(safe-area-inset-bottom));
@@ -847,6 +844,17 @@ const MOTIVATION_MESSAGES = [
 function randomMotivation(){
   return MOTIVATION_MESSAGES[Math.floor(Math.random()*MOTIVATION_MESSAGES.length)];
 }
+const GOAL_ADDRESS_LINES = [
+  'כל אימון היום מקרב אותך צעד אחד לשם.',
+  'זוכרת למה התחלת - תמשיכי להתמיד.',
+  'זה בדיוק בשבילך - קדימה!',
+  'את/ה בונה את זה, יום אחרי יום.',
+  'המטרה שלך לא נשכחת - היום זה עוד יום שסופר.'
+];
+function goalMotivationLine(firstName){
+  const line = GOAL_ADDRESS_LINES[Math.floor(Math.random()*GOAL_ADDRESS_LINES.length)];
+  return `${firstName}, ${line}`;
+}
 function dayDate(startDateStr, dayNumber){
   const d = new Date(startDateStr);
   d.setDate(d.getDate() + (dayNumber - 1));
@@ -1084,7 +1092,7 @@ function appShell(navItems, activeKey, contentHtml){
         ${navItems.map(n => `<div class="nav-item ${n.key===activeKey?'active':''}" data-nav="${n.key}">${n.label}</div>`).join('')}
       </div>
       <div style="flex:1;"></div>
-      <div class="nav-item" id="themeToggleBtn" style="margin-bottom:4px;">${document.body.classList.contains('light-theme') ? '🌙 מצב כהה' : '☀️ מצב בהיר'}</div>
+      <div class="nav-item theme-toggle-item" style="margin-bottom:4px;">${document.body.classList.contains('light-theme') ? '🌙 מצב כהה' : '☀️ מצב בהיר'}</div>
       <div class="who">
         <b>${PROFILE ? PROFILE.full_name : ''}</b>
         <span>${PROFILE && PROFILE.role === 'coach' ? 'מאמן/ת' : 'מתאמן/ת'}</span>
@@ -1094,6 +1102,7 @@ function appShell(navItems, activeKey, contentHtml){
     <div class="main">${contentHtml}</div>
     <div class="bottom-nav">
       ${navItems.map(n => `<div class="nav-item ${n.key===activeKey?'active':''}" data-nav="${n.key}">${n.label}</div>`).join('')}
+      <div class="nav-item theme-toggle-item">${document.body.classList.contains('light-theme') ? '🌙 כהה' : '☀️ בהיר'}</div>
       <div class="nav-item" data-nav="logout">🚪 יציאה</div>
     </div>
   </div>`;
@@ -1114,12 +1123,16 @@ function bindShellNav(handlers){
       if(handlers[key]) handlers[key]();
     };
   });
-  const themeBtn = document.getElementById('themeToggleBtn');
-  if(themeBtn) themeBtn.onclick = () => {
-    document.body.classList.toggle('light-theme');
-    try{ localStorage.setItem('motion_theme', document.body.classList.contains('light-theme') ? 'light' : 'dark'); }catch(e){}
-    themeBtn.textContent = document.body.classList.contains('light-theme') ? '🌙 מצב כהה' : '☀️ מצב בהיר';
-  };
+  document.querySelectorAll('.theme-toggle-item').forEach(themeBtn => {
+    themeBtn.onclick = () => {
+      document.body.classList.toggle('light-theme');
+      try{ localStorage.setItem('motion_theme', document.body.classList.contains('light-theme') ? 'light' : 'dark'); }catch(e){}
+      const isLight = document.body.classList.contains('light-theme');
+      document.querySelectorAll('.theme-toggle-item').forEach((el,i) => {
+        el.textContent = isLight ? (el.closest('.bottom-nav') ? '🌙 כהה' : '🌙 מצב כהה') : (el.closest('.bottom-nav') ? '☀️ בהיר' : '☀️ מצב בהיר');
+      });
+    };
+  });
 }
 
 /* =====================================================================
@@ -2500,10 +2513,22 @@ async function renderTraineeDashboard(){
     <h2 class="page-title" style="margin-bottom:4px;">${greeting}, ${PROFILE.full_name.split(' ')[0]}! 👋</h2>
     <p class="page-sub">${streak>0 ? `${streak>=90?'🏆':streak>=60?'🌟':streak>=30?'💎':'🔥'} ${streak} ימי רצף · ` : ''}${daysLeft!=null ? `${daysLeft} ימים נשארו בתוכנית` : ''}</p>
 
+    <div class="panel" style="margin-bottom:16px;background:linear-gradient(135deg, var(--blue-dim), var(--bg-card));border-color:var(--blue);">
+      ${PROFILE.fitness_goal ? `
+        <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">המטרה שלך</div>
+        <div style="font-size:15px;font-weight:700;line-height:1.5;margin-bottom:10px;">"${PROFILE.fitness_goal}"</div>
+        <div style="font-size:13px;color:var(--blue-bright);font-weight:700;">${goalMotivationLine(PROFILE.full_name.split(' ')[0])}</div>
+        <button class="linklike" id="editGoalStatementBtn" style="margin-top:8px;">✎ עריכת המטרה</button>
+      ` : `
+        <div style="font-size:14px;font-weight:700;margin-bottom:8px;">מה המטרה שלך? 🎯</div>
+        <textarea id="goalStatementInput" rows="2" placeholder="לדוגמה: אני רוצה להיות חזקה יותר ולהרגיש בטוחה בגוף שלי" style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--white);padding:10px 12px;border-radius:8px;font-size:14px;font-family:inherit;"></textarea>
+        <button class="btn small" id="saveGoalStatementBtn" style="margin-top:8px;">שמירה</button>
+      `}
+    </div>
+
     ${(daysSinceEntry===null || daysSinceEntry>=7) ? `
     <div class="reminder-banner">
       <span>📏 ${daysSinceEntry===null ? 'עדיין לא הזנת אף מדידה' : `לא הזנת מדידה כבר ${daysSinceEntry} ימים`} — כדאי לעדכן משקל והיקפים.</span>
-      <button class="btn small" id="dashLogBtn">לרישום מדידה</button>
     </div>` : ''}
 
     ${program && todaysDay && !todaysDay.is_rest_day ? `
@@ -2525,14 +2550,33 @@ async function renderTraineeDashboard(){
       <div class="panel stat"><div class="v">${plan && plan.daily_calories ? plan.daily_calories : '—'}</div><div class="l">יעד קלוריות</div></div>
     </div>
 
-    <div class="grid cols-2" style="margin-bottom:16px;">
-      <button class="btn ghost full" id="dashCardioBtn" style="padding:14px;">🏃 הוספת אירובי</button>
+    ${!program ? `<div class="panel" style="margin-bottom:16px;"><div class="empty">${logoSVG(46)}<div>המאמן/ת שלך עדיין לא בנה/תה עבורך תוכנית</div></div></div>` : ''}
+
+    <div class="grid cols-2">
+      <button class="btn ghost full" id="dashLogBtn" style="padding:14px;">📏 רישום מדידה</button>
       <button class="btn ghost full" id="dashNutritionBtn" style="padding:14px;">🍽 התפריט שלי</button>
     </div>
-
-    ${!program ? `<div class="panel"><div class="empty">${logoSVG(46)}<div>המאמן/ת שלך עדיין לא בנה/תה עבורך תוכנית</div></div></div>` : ''}
   `;
 
+  const goalSaveBtn = document.getElementById('saveGoalStatementBtn');
+  if(goalSaveBtn) goalSaveBtn.onclick = async () => {
+    const text = document.getElementById('goalStatementInput').value.trim();
+    if(!text) return;
+    try{
+      await rest('profiles', { method:'PATCH', query:`?id=eq.${PROFILE.id}`, body:{ fitness_goal: text } });
+      PROFILE.fitness_goal = text;
+      showToast('המטרה נשמרה 🎯');
+      renderTraineeDashboard();
+    }catch(e){ showToast(e.message, true); }
+  };
+  const editGoalBtn = document.getElementById('editGoalStatementBtn');
+  if(editGoalBtn) editGoalBtn.onclick = async () => {
+    try{
+      await rest('profiles', { method:'PATCH', query:`?id=eq.${PROFILE.id}`, body:{ fitness_goal: null } });
+      PROFILE.fitness_goal = null;
+      renderTraineeDashboard();
+    }catch(e){ showToast(e.message, true); }
+  };
   const dashLogBtn = document.getElementById('dashLogBtn');
   if(dashLogBtn) dashLogBtn.onclick = () => openLogProgressModal();
   const dashTodayBtn = document.getElementById('dashTodayBtn');
@@ -2548,8 +2592,6 @@ async function renderTraineeDashboard(){
       }
     }, 50);
   };
-  const dashCardioBtn = document.getElementById('dashCardioBtn');
-  if(dashCardioBtn) dashCardioBtn.onclick = () => { if(program) openAddCardioModal(program, days); else showToast('עדיין אין תוכנית פעילה', true); };
   const dashNutritionBtn = document.getElementById('dashNutritionBtn');
   if(dashNutritionBtn) dashNutritionBtn.onclick = renderTraineeNutrition;
 
