@@ -996,6 +996,27 @@ function dayLabel(startDateStr, dayNumber){
   const d = dayDate(startDateStr, dayNumber);
   return { weekday: HEBREW_WEEKDAYS[d.getDay()], dateStr: d.toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'}), fullDate: d.toLocaleDateString('he-IL'), dateObj: d };
 }
+function groupDaysByCalendarWeek(days, startDateStr){
+  // מקבצת ימים לפי שבוע קלנדרי אמיתי (ראשון-שבת), לא לפי בלוקים גולמיים של 7 ימים מתאריך ההתחלה
+  const groups = {};
+  days.forEach(d => {
+    const date = dayDate(startDateStr, d.day_number);
+    date.setHours(0,0,0,0);
+    const sunday = new Date(date);
+    sunday.setDate(sunday.getDate() - sunday.getDay());
+    const key = sunday.getTime();
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(d);
+  });
+  const keys = Object.keys(groups).map(Number).sort((a,b)=>a-b);
+  const todaySunday = new Date(); todaySunday.setHours(0,0,0,0); todaySunday.setDate(todaySunday.getDate() - todaySunday.getDay());
+  const todayKey = todaySunday.getTime();
+  return keys.map((key, idx) => ({
+    weekNum: idx+1,
+    isCurrentWeek: key === todayKey,
+    days: groups[key].slice().sort((a,b)=>a.day_number-b.day_number)
+  }));
+}
 
 let WELCOME_SHOWN_THIS_SESSION = false;
 async function maybeShowWelcome(){
@@ -1940,30 +1961,19 @@ async function renderCoachTraineeDetail(){
 function renderDaysList(days, startDate){
   if(!days.length) return `<div class="empty">אין ימים בתוכנית עדיין</div>`;
   const sorted = days.slice().sort((a,b)=>a.day_number-b.day_number);
-  const todayStr = new Date().toDateString();
+  const weekGroups = groupDaysByCalendarWeek(sorted, startDate);
 
-  const weeksMap = {};
-  sorted.forEach(d => {
-    const wn = Math.ceil(d.day_number / 7);
-    if(!weeksMap[wn]) weeksMap[wn] = [];
-    weeksMap[wn].push(d);
-  });
-  const weekNums = Object.keys(weeksMap).map(Number).sort((a,b)=>a-b);
-  const currentWeekNum = startDate ? Math.ceil((Math.floor((Date.now() - new Date(startDate).getTime())/86400000) + 1) / 7) : null;
-
-  return weekNums.map(wn => {
-    const weekDays = weeksMap[wn];
+  return weekGroups.map(({weekNum, isCurrentWeek, days: weekDays}) => {
     const startLbl = startDate ? dayLabel(startDate, weekDays[0].day_number) : null;
     const endLbl = startDate ? dayLabel(startDate, weekDays[weekDays.length-1].day_number) : null;
     const workDaysInWeek = weekDays.filter(d=>!d.is_rest_day);
     const doneInWeek = workDaysInWeek.filter(d=>d.completed).length;
-    const isCurrentWeek = wn === currentWeekNum;
     return `
     <div class="panel week-folder ${isCurrentWeek?'expanded':''}" style="margin-bottom:10px;padding:0;overflow:hidden;">
-      <div class="week-folder-head" data-week-toggle-coach="${wn}">
+      <div class="week-folder-head" data-week-toggle-coach="${weekNum}">
         <div>
-          <div class="week-folder-title">📁 שבוע ${wn}</div>
-          <div class="week-folder-sub">${startLbl && endLbl ? `${startLbl.dateStr} - ${endLbl.dateStr}` : ''}</div>
+          <div class="week-folder-title">📁 שבוע ${weekNum}</div>
+          <div class="week-folder-sub">${startLbl && endLbl ? `<span dir="ltr" style="unicode-bidi:isolate;">${startLbl.dateStr} - ${endLbl.dateStr}</span>` : ''}</div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${workDaysInWeek.length ? `<span class="badge" style="background:${doneInWeek===workDaysInWeek.length?'rgba(51,196,129,0.18)':'var(--blue-dim)'};color:${doneInWeek===workDaysInWeek.length?'var(--green)':'var(--blue-bright)'};">${doneInWeek}/${workDaysInWeek.length}</span>` : ''}
@@ -2945,29 +2955,20 @@ async function renderTraineeHome(){
     ${days.length ? `<p class="muted" style="font-size:11.5px;margin-bottom:10px;">💡 טיפ: אפשר להחליק (swipe) על כרטיס אימון כדי לסמן/לבטל סימון בוצע במהירות</p>` : ''}
     ${(() => {
       if(!days.length) return `<div class="panel"><div class="empty">${logoSVG(46)}<div>אין עדיין תוכנית פעילה</div></div></div>`;
-      const weeksMap = {};
-      days.forEach(d => {
-        const wn = Math.ceil(d.day_number / 7);
-        if(!weeksMap[wn]) weeksMap[wn] = [];
-        weeksMap[wn].push(d);
-      });
-      const weekNums = Object.keys(weeksMap).map(Number).sort((a,b)=>a-b);
-      const todaysWeekNum = todaysDay ? Math.ceil(todaysDay.day_number / 7) : null;
-      return weekNums.map(wn => {
-        const weekDays = weeksMap[wn];
+      const weekGroups = groupDaysByCalendarWeek(days, program.start_date);
+      return weekGroups.map(({weekNum, isCurrentWeek, days: weekDays}) => {
         const startD = weekDays[0], endD = weekDays[weekDays.length-1];
         const startLbl = program ? dayLabel(program.start_date, startD.day_number) : null;
         const endLbl = program ? dayLabel(program.start_date, endD.day_number) : null;
         const workDaysInWeek = weekDays.filter(d=>!d.is_rest_day);
         const doneInWeek = workDaysInWeek.filter(d=>d.completed).length;
-        const isCurrentWeek = wn === todaysWeekNum;
         const hasIncompletePast = weekDays.some(d => !d.is_rest_day && !d.completed && dayDate(program.start_date, d.day_number) < new Date(new Date().toDateString()));
         return `
         <div class="panel week-folder ${isCurrentWeek?'expanded':''}" style="margin-bottom:10px;padding:0;overflow:hidden;">
-          <div class="week-folder-head" data-week-toggle="${wn}">
+          <div class="week-folder-head" data-week-toggle="${weekNum}">
             <div>
-              <div class="week-folder-title">📁 שבוע ${wn}</div>
-              <div class="week-folder-sub">${startLbl && endLbl ? `${startLbl.dateStr} - ${endLbl.dateStr}` : ''}</div>
+              <div class="week-folder-title">📁 שבוע ${weekNum}</div>
+              <div class="week-folder-sub">${startLbl && endLbl ? `<span dir="ltr" style="unicode-bidi:isolate;">${startLbl.dateStr} - ${endLbl.dateStr}</span>` : ''}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
               ${workDaysInWeek.length ? `<span class="badge" style="background:${doneInWeek===workDaysInWeek.length?'rgba(51,196,129,0.18)':'var(--blue-dim)'};color:${doneInWeek===workDaysInWeek.length?'var(--green)':'var(--blue-bright)'};">${doneInWeek}/${workDaysInWeek.length}</span>` : ''}
@@ -3222,9 +3223,15 @@ async function renderTraineeHome(){
         if(container) container.classList.toggle('done', cb.checked);
         if(cb.checked){
           const thisDay = days.find(d => d.id === dayId);
-          if(thisDay){
-            const wn = Math.ceil(thisDay.day_number / 7);
-            const weekDays = days.filter(d => Math.ceil(d.day_number/7) === wn && !d.is_rest_day);
+          if(thisDay && program){
+            const thisDate = dayDate(program.start_date, thisDay.day_number); thisDate.setHours(0,0,0,0);
+            const thisSunday = new Date(thisDate); thisSunday.setDate(thisSunday.getDate() - thisSunday.getDay());
+            const weekDays = days.filter(d => {
+              if(d.is_rest_day) return false;
+              const dd = dayDate(program.start_date, d.day_number); dd.setHours(0,0,0,0);
+              const dSunday = new Date(dd); dSunday.setDate(dSunday.getDate() - dSunday.getDay());
+              return dSunday.getTime() === thisSunday.getTime();
+            });
             const weekDone = weekDays.every(d => d.id === dayId ? true : d.completed);
             fireConfetti(weekDone && weekDays.length > 1);
           } else {
