@@ -2157,14 +2157,15 @@ function openMakeRecurringModal(program, isEdit){
   document.getElementById('recurCancel').onclick = () => bg.remove();
   document.getElementById('recurConfirm').onclick = async () => {
     const errEl = document.getElementById('recurErr');
-    const week = [];
+    const week = new Array(7).fill(null).map(() => ({ title:'מנוחה', is_rest_day:true }));
     for(let n=1; n<=7; n++){
       const d = existingDays.find(x => x.day_number === n);
-      if(!d){ week.push({ title:'מנוחה', is_rest_day:true }); continue; }
-      week.push({
+      if(!d) continue; // נשאר "מנוחה" (ברירת המחדל שכבר הוכנה למעלה)
+      const weekday = dayDate(program.start_date, n).getDay(); // 0=ראשון...6=שבת - כך שהמחזור תמיד יתיישר לפי יום השבוע האמיתי
+      week[weekday] = {
         title: d.title || '', description: d.description || '', is_rest_day: !!d.is_rest_day,
         exercises: (d.exercises || []).map(e => ({ name:e.name, sets:e.target_sets, reps:e.target_reps, weight:e.target_weight_kg }))
-      });
+      };
     }
     try{
       await rest('programs', { method:'PATCH', query:`?id=eq.${program.id}`, body:{ week_pattern: week, template_key: 'custom' } });
@@ -2178,6 +2179,17 @@ function openMakeRecurringModal(program, isEdit){
   };
 }
 
+function pickWeekPatternSlot(week, program, dayNumber){
+  // תבניות מותאמות אישית (שנבחרו לפי יום בשבוע ספציפי) חייבות תמיד להתיישר לפי יום השבוע האמיתי בלוח השנה,
+  // אחרת "יום ג'" למשל עלול לנחות על יום אחר בשבועות הבאים אם תאריך ההתחלה לא היה יום ראשון.
+  // תבניות מובנות (A/B/C וכו') ממשיכות ברצף רגיל, בלי תלות ביום בשבוע.
+  if(program.template_key === 'custom'){
+    const weekday = dayDate(program.start_date, dayNumber).getDay(); // 0=ראשון...6=שבת
+    return week[weekday % week.length];
+  }
+  return week[(dayNumber-1) % week.length];
+}
+
 async function extendProgramByOneWeek(program){
   if(!program.week_pattern || !program.week_pattern.length) throw new Error('לתוכנית הזו אין מחזור שבועי שמור.');
   const week = program.week_pattern;
@@ -2186,7 +2198,7 @@ async function extendProgramByOneWeek(program){
   const target = Math.min(program.duration_days, existingMax + 7);
   if(target <= existingMax) throw new Error('התוכנית כבר הגיעה לסוף המשך שלה.');
   for(let n=existingMax+1; n<=target; n++){
-    const tpl = week[(n-1) % week.length];
+    const tpl = pickWeekPatternSlot(week, program, n);
     const created = await rest('program_days', { method:'POST', body:{
       program_id: program.id, day_number: n,
       title: tpl.title, description: tpl.description || '', is_rest_day: !!tpl.is_rest_day
@@ -2211,7 +2223,7 @@ async function autoExtendProgramIfNeeded(program){
   if(target <= existingMax) return program;
   const newDays = [];
   for(let n=existingMax+1; n<=target; n++){
-    const tpl = week[(n-1) % week.length];
+    const tpl = pickWeekPatternSlot(week, program, n);
     try{
       const created = await rest('program_days', { method:'POST', body:{
         program_id: program.id, day_number: n,
@@ -2330,7 +2342,7 @@ async function openCreateProgramModal(traineeId){
       if(newProgram && week){
         const fillDays = Math.min(duration, parseInt(document.getElementById('pFillDays').value) || 7);
         for(let i=0;i<fillDays;i++){
-          const tpl = week[i % week.length];
+          const tpl = pickWeekPatternSlot(week, newProgram, i+1);
           saveBtn.textContent = `יוצרת יום ${i+1}/${fillDays}...`;
           const createdDay = await rest('program_days', { method:'POST', body:{
             program_id: newProgram.id, day_number: i+1,
