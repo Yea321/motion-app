@@ -1454,8 +1454,10 @@ function openMoveDayModal(dayId, currentNum, program, onDone){
   const totalDays = program.duration_days || (program.program_days||[]).length;
   const byNumber = {};
   (program.program_days || []).forEach(d => { byNumber[d.day_number] = d; });
+  // תמיד משאירה מרווח של שבועיים לפני יום 1, כדי שאפשר יהיה להזיז אימון גם ל"אתמול"/לפני תחילת התוכנית הרשמית
+  const startN = Math.min(1, currentNum - 14, -13);
   const options = [];
-  for(let n=1; n<=totalDays; n++){
+  for(let n=startN; n<=totalDays; n++){
     const lbl = dayLabel(program.start_date, n);
     const existing = byNumber[n];
     let suffix = '';
@@ -1490,7 +1492,7 @@ function openMoveDayModal(dayId, currentNum, program, onDone){
       const targetDay = allDays.find(d => d.day_number === targetNum);
       const targetLbl = dayLabel(program.start_date, targetNum);
       if(targetDay){
-        await rest('program_days', { method:'PATCH', query:`?id=eq.${targetDay.id}`, body:{ day_number: -1 } });
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${targetDay.id}`, body:{ day_number: -99999 } });
         await rest('program_days', { method:'PATCH', query:`?id=eq.${dayId}`, body:{ day_number: targetNum } });
         await rest('program_days', { method:'PATCH', query:`?id=eq.${targetDay.id}`, body:{ day_number: currentNum } });
         showToast(`הוחלף עם ${targetLbl.weekday}, ${targetLbl.dateStr}`);
