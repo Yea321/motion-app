@@ -1485,7 +1485,7 @@ function openMoveDayModal(dayId, currentNum, program, onDone){
   document.getElementById('moveConfirm').onclick = async () => {
     const errEl = document.getElementById('moveErr');
     const targetNum = parseInt(document.getElementById('moveDaySelect').value);
-    if(!targetNum){ errEl.textContent = 'נא לבחור יום.'; errEl.classList.remove('hidden'); return; }
+    if(isNaN(targetNum)){ errEl.textContent = 'נא לבחור יום.'; errEl.classList.remove('hidden'); return; }
     if(targetNum === currentNum){ bg.remove(); return; }
     try{
       const allDays = program.program_days || [];
