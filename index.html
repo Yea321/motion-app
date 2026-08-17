@@ -1847,6 +1847,7 @@ async function renderCoachTraineeDetail(){
               <span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);">🔁 ממשיך אוטומטית</span>
               <button class="btn ghost small" id="addWeekNowBtn">➕ הוספת שבוע נוסף עכשיו</button>
               <button class="btn ghost small" id="editRecurringBtn">✎ עריכת המחזור</button>
+              <button class="btn ghost small" id="fixFutureDaysBtn" style="color:var(--red);border-color:var(--red);">🔄 תיקון ימים עתידיים</button>
               <button class="icon-btn" id="removeRecurringBtn" title="ביטול ההמשך האוטומטי">🗑🔁</button>
             `}
             <button class="icon-btn" id="deleteProgramBtn" title="מחיקת התוכנית כולה">🗑</button>
@@ -1896,6 +1897,8 @@ async function renderCoachTraineeDetail(){
     };
     const editRecurringBtn = document.getElementById('editRecurringBtn');
     if(editRecurringBtn) editRecurringBtn.onclick = () => openMakeRecurringModal(program, true);
+    const fixFutureDaysBtn = document.getElementById('fixFutureDaysBtn');
+    if(fixFutureDaysBtn) fixFutureDaysBtn.onclick = () => openFixFutureDaysModal(program);
     const removeRecurringBtn = document.getElementById('removeRecurringBtn');
     if(removeRecurringBtn) removeRecurringBtn.onclick = () => {
       if(!confirm('לבטל את ההמשך האוטומטי? הימים שכבר נבנו יישארו, אבל התוכנית תפסיק להתמלא לבד מעכשיו.')) return;
@@ -2138,6 +2141,66 @@ const PROGRAM_TEMPLATES = {
     ]
   }
 };
+
+function openFixFutureDaysModal(program){
+  const existingDays = (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number);
+  const maxBuilt = existingDays.length ? Math.max(...existingDays.map(d=>d.day_number)) : 0;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>🔄 תיקון ימים עתידיים</h3>
+      <p class="muted" style="font-size:13px;line-height:1.6;">
+        אם ערכת את המחזור השבועי (ימים 1-7) אחרי שכבר נבנו שבועות הבאים, השבועות הבאים עלולים להישאר עם הדפוס הישן. הפעולה הזו <b style="color:var(--red);">תמחק לצמיתות</b> את כל הימים מהמספר שתבחרי והלאה, ותיתן להם להיבנות מחדש אוטומטית לפי המחזור הנוכחי והמתוקן.
+      </p>
+      <div class="field">
+        <label>למחוק ולבנות מחדש החל מיום מספר</label>
+        <input id="fixFromNum" type="number" value="8" min="1" max="${maxBuilt}">
+        <p class="muted" style="font-size:11.5px;margin-top:4px;">בד"כ כדאי להשאיר את השבוע הראשון (ימים 1-7) כמו שהוא, ולתקן רק מיום 8 והלאה.</p>
+      </div>
+      <div id="fixErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="fixCancel">ביטול</button>
+        <button class="btn danger full" id="fixConfirm">מחיקה ובנייה מחדש</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('fixCancel').onclick = () => bg.remove();
+  document.getElementById('fixConfirm').onclick = async () => {
+    const errEl = document.getElementById('fixErr');
+    const fromNum = parseInt(document.getElementById('fixFromNum').value);
+    if(!fromNum || fromNum < 1){ errEl.textContent = 'נא להזין מספר יום תקין.'; errEl.classList.remove('hidden'); return; }
+    const btn = document.getElementById('fixConfirm');
+    btn.disabled = true; btn.textContent = 'מוחקת...';
+    try{
+      const toDelete = existingDays.filter(d => d.day_number >= fromNum);
+      for(const d of toDelete){
+        await rest('exercises', { method:'DELETE', query:`?day_id=eq.${d.id}` });
+        await rest('program_days', { method:'DELETE', query:`?id=eq.${d.id}` });
+      }
+      program.program_days = existingDays.filter(d => d.day_number < fromNum);
+      btn.textContent = 'בונה מחדש...';
+      let currentMax = program.program_days.length ? Math.max(...program.program_days.map(d=>d.day_number)) : 0;
+      let safety = 0;
+      while(currentMax < maxBuilt && safety < 30){
+        await extendProgramByOneWeek(program);
+        const rows = await rest('program_days', { query:`?program_id=eq.${program.id}&select=*,exercises(*)&order=day_number.asc` }) || [];
+        program.program_days = rows;
+        const newMax = rows.length ? Math.max(...rows.map(d=>d.day_number)) : 0;
+        if(newMax === currentMax) break; // בטיחות מפני לולאה אינסופית
+        currentMax = newMax;
+        safety++;
+      }
+      bg.remove();
+      showToast('הימים העתידיים תוקנו ונבנו מחדש');
+      renderCoachTraineeDetail();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+      btn.disabled = false; btn.textContent = 'מחיקה ובנייה מחדש';
+    }
+  };
+}
 
 function openMakeRecurringModal(program, isEdit){
   const existingDays = (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number);
