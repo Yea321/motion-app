@@ -507,6 +507,14 @@ async function getExerciseLibrary(forceRefresh){
   }catch(e){ EXERCISE_LIBRARY = []; }
   return EXERCISE_LIBRARY;
 }
+let FOOD_LIBRARY = null;
+async function getFoodLibrary(forceRefresh){
+  if(FOOD_LIBRARY && !forceRefresh) return FOOD_LIBRARY;
+  try{
+    FOOD_LIBRARY = await rest('food_library', { query:`?select=*&order=name.asc` }) || [];
+  }catch(e){ FOOD_LIBRARY = []; }
+  return FOOD_LIBRARY;
+}
 function findLibraryInstructions(name){
   if(!EXERCISE_LIBRARY) return null;
   const norm = s => (s||'').trim().toLowerCase();
@@ -3356,15 +3364,28 @@ async function renderTraineeNutrition(){
 
   let plans = [];
   let logs = [];
+  let foodEntries = [];
   try{
     plans = await rest('nutrition_plans', { query:`?trainee_id=eq.${PROFILE.id}&select=*,meals(*)&order=created_at.desc` }) || [];
   }catch(e){ showToast(e.message, true); }
   try{
     logs = await rest('nutrition_logs', { query:`?trainee_id=eq.${PROFILE.id}&select=*&order=log_date.desc` }) || [];
   }catch(e){}
+  const todayStr = new Date().toISOString().slice(0,10);
+  try{
+    foodEntries = await rest('food_entries', { query:`?trainee_id=eq.${PROFILE.id}&log_date=eq.${todayStr}&select=*&order=created_at.asc` }) || [];
+  }catch(e){}
 
   const plan = plans[0] || null;
   const meals = plan ? (plan.meals || []).slice().sort((a,b)=>a.order_index-b.order_index) : [];
+
+  const foodTotals = foodEntries.reduce((acc,f) => {
+    acc.calories += f.calories||0; acc.protein += f.protein_g||0; acc.carbs += f.carbs_g||0; acc.fat += f.fat_g||0;
+    return acc;
+  }, {calories:0, protein:0, carbs:0, fat:0});
+  const calTarget = plan ? plan.daily_calories : null;
+  const calRemaining = calTarget!=null ? calTarget - foodTotals.calories : null;
+  const calPct = calTarget ? Math.min(100, Math.round(100*foodTotals.calories/calTarget)) : 0;
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
   const weekLogs = logs.filter(l => new Date(l.log_date) >= weekAgo);
@@ -3373,6 +3394,40 @@ async function renderTraineeNutrition(){
   document.querySelector('.main').innerHTML = `
     <h2 class="page-title">${plan ? plan.title : 'התפריט שלי'}</h2>
     <p class="page-sub">${plan ? 'תפריט התזונה שהמאמן שלך בנה עבורך' : 'המאמן שלך עדיין לא בנה עבורך תפריט'}</p>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">🍎 מחשבון קלוריות - היום</h3>
+        <button class="btn small" id="addFoodBtn">+ הוספת מאכל</button>
+      </div>
+      ${calTarget!=null ? `
+        <div style="margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+            <span class="muted">${foodTotals.calories} / ${calTarget} קק"ל</span>
+            <span style="color:${calRemaining<0?'var(--red)':'var(--green)'};font-weight:700;">${calRemaining<0?`${Math.abs(calRemaining)} קק"ל מעבר ליעד`:`נשארו ${calRemaining} קק"ל`}</span>
+          </div>
+          <div style="background:var(--bg-elevated);border-radius:20px;height:10px;overflow:hidden;">
+            <div style="background:${calPct>=100?'var(--red)':'var(--blue)'};height:100%;width:${calPct}%;transition:width .3s ease;"></div>
+          </div>
+        </div>
+        <div class="macro-grid" style="margin-top:14px;">
+          <div class="macro-box"><div class="v">${foodTotals.protein}${plan.daily_protein_g?`/${plan.daily_protein_g}`:''}</div><div class="l">חלבון</div></div>
+          <div class="macro-box"><div class="v">${foodTotals.carbs}${plan.daily_carbs_g?`/${plan.daily_carbs_g}`:''}</div><div class="l">פחמימות</div></div>
+          <div class="macro-box"><div class="v">${foodTotals.fat}${plan.daily_fat_g?`/${plan.daily_fat_g}`:''}</div><div class="l">שומן</div></div>
+          <div class="macro-box"><div class="v">${foodEntries.length}</div><div class="l">פריטים נרשמו</div></div>
+        </div>
+      ` : `<p class="muted" style="font-size:13px;margin-top:10px;">סה"כ היום: <b style="color:var(--white);">${foodTotals.calories} קק"ל</b> (${foodEntries.length} פריטים) - עדיין אין יעד קלורי מוגדר מהמאמן/ת</p>`}
+      <div style="margin-top:14px;">
+        ${foodEntries.length ? foodEntries.map(f => `
+          <div class="day-row" style="cursor:default;">
+            <div class="day-info">
+              <div class="t">${f.name}</div>
+              <div class="d">${[f.calories?`${f.calories} קק"ל`:null, f.protein_g?`${f.protein_g}g חלבון`:null, f.carbs_g?`${f.carbs_g}g פחמ׳`:null, f.fat_g?`${f.fat_g}g שומן`:null].filter(Boolean).join(' · ')}</div>
+            </div>
+            <button class="icon-btn" data-delete-food="${f.id}" style="width:30px;height:30px;">✕</button>
+          </div>`).join('') : `<div class="empty" style="padding:16px;">עדיין לא נרשם כלום היום</div>`}
+      </div>
+    </div>
     ${plan ? `
       <div class="macro-grid" style="margin-bottom:18px;">
         <div class="macro-box"><div class="v">${plan.daily_calories ?? '—'}</div><div class="l">קלוריות ליום</div></div>
@@ -3416,6 +3471,14 @@ async function renderTraineeNutrition(){
       </div>
     </div>
   `;
+  document.getElementById('addFoodBtn').onclick = () => openAddFoodModal();
+  document.querySelectorAll('[data-delete-food]').forEach(btn => {
+    btn.onclick = () => {
+      rest('food_entries', { method:'DELETE', query:`?id=eq.${btn.getAttribute('data-delete-food')}` })
+        .then(() => { showToast('הפריט נמחק'); renderTraineeNutrition(); })
+        .catch(e => showToast(e.message, true));
+    };
+  });
   document.getElementById('addDeviationBtn').onclick = () => openAddDeviationModal();
   document.querySelectorAll('[data-delete-log]').forEach(btn => {
     btn.onclick = () => {
@@ -3424,6 +3487,90 @@ async function renderTraineeNutrition(){
         .catch(e => showToast(e.message, true));
     };
   });
+}
+
+function openAddFoodModal(){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>+ הוספת מאכל</h3>
+      <div class="field">
+        <label>חיפוש בספרייה (אופציונלי - ממלא אוטומטית)</label>
+        <input id="foodSearch" placeholder="לדוגמה: חזה עוף, אורז, ביצה...">
+        <div id="foodSearchResults" style="max-height:160px;overflow-y:auto;margin-top:6px;"></div>
+      </div>
+      <div class="field hidden" id="foodGramsField">
+        <label>כמות (גרם)</label>
+        <input id="foodGrams" type="number" value="100">
+      </div>
+      <div class="field"><label>מה אכלת?</label><input id="foodName" placeholder="לדוגמה: חזה עוף עם אורז"></div>
+      <div class="grid cols-2">
+        <div class="field"><label>קלוריות</label><input id="foodCal" type="number" placeholder="לדוגמה: 350"></div>
+        <div class="field"><label>חלבון (גרם, אופציונלי)</label><input id="foodProt" type="number"></div>
+        <div class="field"><label>פחמימות (גרם, אופציונלי)</label><input id="foodCarb" type="number"></div>
+        <div class="field"><label>שומן (גרם, אופציונלי)</label><input id="foodFat" type="number"></div>
+      </div>
+      <div id="foodErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="foodCancel">ביטול</button>
+        <button class="btn full" id="foodSave">הוספה</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+
+  let selectedFood = null;
+  function recalcFromLibrary(){
+    if(!selectedFood) return;
+    const grams = parseFloat(document.getElementById('foodGrams').value) || 0;
+    const factor = grams / 100;
+    document.getElementById('foodCal').value = Math.round(selectedFood.calories_per_100g * factor);
+    document.getElementById('foodProt').value = selectedFood.protein_per_100g!=null ? Math.round(selectedFood.protein_per_100g * factor) : '';
+    document.getElementById('foodCarb').value = selectedFood.carbs_per_100g!=null ? Math.round(selectedFood.carbs_per_100g * factor) : '';
+    document.getElementById('foodFat').value = selectedFood.fat_per_100g!=null ? Math.round(selectedFood.fat_per_100g * factor) : '';
+  }
+
+  document.getElementById('foodSearch').oninput = async (ev) => {
+    const q = ev.target.value.trim().toLowerCase();
+    const resultsEl = document.getElementById('foodSearchResults');
+    if(!q){ resultsEl.innerHTML = ''; return; }
+    const lib = await getFoodLibrary();
+    const filtered = lib.filter(f => f.name.toLowerCase().includes(q)).slice(0,8);
+    resultsEl.innerHTML = filtered.map(f => `<div class="lib-item" data-pick-food="${f.id}"><div class="lib-name">${f.name}</div><div class="lib-cat">${f.calories_per_100g} קק"ל ל-100 גר׳${f.category ? ' · '+f.category : ''}</div></div>`).join('') || `<div class="empty" style="padding:12px;font-size:12px;">אין תוצאות</div>`;
+    resultsEl.querySelectorAll('[data-pick-food]').forEach(el => {
+      el.onclick = () => {
+        selectedFood = filtered.find(f => f.id === el.getAttribute('data-pick-food'));
+        document.getElementById('foodName').value = selectedFood.name;
+        document.getElementById('foodGramsField').classList.remove('hidden');
+        document.getElementById('foodGrams').value = 100;
+        recalcFromLibrary();
+        resultsEl.innerHTML = '';
+        document.getElementById('foodSearch').value = selectedFood.name;
+      };
+    });
+  };
+  document.getElementById('foodGrams').oninput = recalcFromLibrary;
+
+  document.getElementById('foodCancel').onclick = () => bg.remove();
+  document.getElementById('foodSave').onclick = async () => {
+    const errEl = document.getElementById('foodErr');
+    const name = document.getElementById('foodName').value.trim();
+    if(!name){ errEl.textContent = 'נא לרשום מה אכלת.'; errEl.classList.remove('hidden'); return; }
+    const num = id => { const v = document.getElementById(id).value; return v===''?null:parseInt(v); };
+    try{
+      await rest('food_entries', { method:'POST', body:{
+        trainee_id: PROFILE.id,
+        log_date: new Date().toISOString().slice(0,10),
+        name, calories: num('foodCal'), protein_g: num('foodProt'), carbs_g: num('foodCarb'), fat_g: num('foodFat')
+      }});
+      bg.remove();
+      showToast('נוסף ליומן');
+      renderTraineeNutrition();
+    }catch(e){
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
 }
 
 function openAddDeviationModal(){
