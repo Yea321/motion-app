@@ -2212,14 +2212,27 @@ function openFixFutureDaysModal(program){
 
 function openMakeRecurringModal(program, isEdit){
   const existingDays = (program.program_days || []).slice().sort((a,b)=>a.day_number-b.day_number);
+  const weekGroups = groupDaysByCalendarWeek(existingDays, program.start_date);
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
     <div class="modal">
-      <h3>${isEdit ? 'עריכת המחזור השבועי' : 'המשך אוטומטית לפי השבוע שכבר בנית'}</h3>
+      <h3>${isEdit ? 'עריכת המחזור השבועי' : 'המשך אוטומטית לפי שבוע שבנית'}</h3>
       <p class="muted" style="font-size:13px;line-height:1.6;">
-        זה ${isEdit ? 'יתפוס מחדש' : 'ייקח'} את הימים ${isEdit ? '<b>הנוכחיים</b>' : ''} מיום 1 עד יום 7 - <b>תמיד שבוע קלנדרי מלא</b>, כדי שיהיה ברור מה שבוע 1 ומה שבוע 2. כל יום שלא בנית בטווח הזה יסומן אוטומטית כיום מנוחה. המחזור הזה יחזור על עצמו כל שבוע עד סוף התוכנית.
+        בחרי איזה שבוע (שכבר בנוי) יהפוך לדפוס שחוזר על עצמו כל שבוע עד סוף התוכנית - למשל אם ערכת תרגילים בשבוע 4, בחרי "שבוע 4" כדי שהעדכון ימשיך קדימה מכאן.
       </p>
+      <div class="field">
+        <label>איזה שבוע לתפוס?</label>
+        <select id="recurWeekSelect">
+          ${weekGroups.map((wg, idx) => {
+            const first = wg.days[0], last = wg.days[wg.days.length-1];
+            const startLbl = dayLabel(program.start_date, first.day_number);
+            const endLbl = dayLabel(program.start_date, last.day_number);
+            return `<option value="${idx}" ${idx===weekGroups.length-1?'selected':''}>שבוע ${wg.weekNum} (${startLbl.dateStr} - ${endLbl.dateStr})</option>`;
+          }).join('')}
+        </select>
+        <p class="muted" style="font-size:11.5px;margin-top:4px;">ברירת המחדל היא השבוע האחרון שבנית - בד"כ זה מה שרוצים.</p>
+      </div>
       <div id="recurErr" class="error hidden"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="recurCancel">ביטול</button>
@@ -2230,16 +2243,16 @@ function openMakeRecurringModal(program, isEdit){
   document.getElementById('recurCancel').onclick = () => bg.remove();
   document.getElementById('recurConfirm').onclick = async () => {
     const errEl = document.getElementById('recurErr');
+    const chosenIdx = parseInt(document.getElementById('recurWeekSelect').value);
+    const chosenWeek = weekGroups[chosenIdx];
     const week = new Array(7).fill(null).map(() => ({ title:'מנוחה', is_rest_day:true }));
-    for(let n=1; n<=7; n++){
-      const d = existingDays.find(x => x.day_number === n);
-      if(!d) continue; // נשאר "מנוחה" (ברירת המחדל שכבר הוכנה למעלה)
-      const weekday = dayDate(program.start_date, n).getDay(); // 0=ראשון...6=שבת - כך שהמחזור תמיד יתיישר לפי יום השבוע האמיתי
+    chosenWeek.days.forEach(d => {
+      const weekday = dayDate(program.start_date, d.day_number).getDay(); // 0=ראשון...6=שבת - כך שהמחזור תמיד יתיישר לפי יום השבוע האמיתי
       week[weekday] = {
         title: d.title || '', description: d.description || '', is_rest_day: !!d.is_rest_day,
         exercises: (d.exercises || []).map(e => ({ name:e.name, sets:e.target_sets, reps:e.target_reps, weight:e.target_weight_kg }))
       };
-    }
+    });
     try{
       await rest('programs', { method:'PATCH', query:`?id=eq.${program.id}`, body:{ week_pattern: week, template_key: 'custom' } });
       bg.remove();
