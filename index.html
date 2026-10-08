@@ -1961,6 +1961,25 @@ async function renderCoachTraineeDetail(){
       if(day) openManageExercisesModal(day);
     };
   });
+  document.querySelectorAll('[data-make-workout]').forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const dayId = btn.getAttribute('data-make-workout');
+      const day = (program.program_days || []).find(d => d.id === dayId);
+      if(!day) return;
+      btn.disabled = true;
+      try {
+        const newTitle = (day.title && day.title !== 'מנוחה' && day.title !== 'יום מנוחה') ? day.title : 'אימון';
+        await rest('program_days', { method:'PATCH', query:`?id=eq.${dayId}`, body:{ is_rest_day:false, title:newTitle }, prefer:'return=minimal' });
+        day.is_rest_day = false;
+        day.title = newTitle;
+        openManageExercisesModal(day);
+      } catch(e) {
+        btn.disabled = false;
+        alert('לא הצלחתי להפוך את היום לאימון: ' + (e.message || e));
+      }
+    };
+  });
   document.querySelectorAll('[data-move-day]').forEach(btn => {
     btn.onclick = (ev) => {
       ev.stopPropagation();
@@ -2024,7 +2043,7 @@ function renderDaysList(days, startDate){
             <div class="day-info">
               <div class="t">${d.is_rest_day ? 'יום מנוחה' : `${exCount} תרגילים`}</div>
             </div>
-            ${d.is_rest_day ? `<span class="badge">מנוחה</span>` : `<button class="btn ghost small" data-manage-ex="${d.id}">✎ תרגילים</button>`}
+            ${d.is_rest_day ? `<span class="badge">מנוחה</span><button class="btn ghost small" data-make-workout="${d.id}">➕ הפיכה לאימון</button>` : `<button class="btn ghost small" data-manage-ex="${d.id}">✎ תרגילים</button>`}
             ${d.trainee_note ? `<span class="badge" style="background:var(--blue-dim);color:var(--blue-bright);" title="${d.trainee_note.replace(/"/g,'&quot;')}">💬 הערה</span>` : ''}
             <button class="icon-btn" data-move-day="${d.id}" data-daynum="${d.day_number}" title="העברה ליום אחר">↕</button>
             ${d.completed ? `<span class="badge" style="background:#0F3D2A;color:var(--green);">בוצע</span>` : ''}
