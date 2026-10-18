@@ -41,6 +41,23 @@
     --green:#1E9E63;
     --red:#D5393E;
   }
+  /* ---------- נגישות ---------- */
+  :focus-visible{outline:3px solid var(--blue-bright);outline-offset:2px;border-radius:4px;}
+  .field input:focus-visible,.field select:focus-visible,.field textarea:focus-visible{outline:3px solid var(--blue-bright);outline-offset:1px;}
+  .icon-btn{min-width:44px;min-height:44px;}
+  .btn.small{min-height:36px;}
+  body.a11y-t1{zoom:1.12;}
+  body.a11y-t2{zoom:1.25;}
+  body.a11y-contrast{--muted:#D0D5DF;--border:#7A8296;--blue-bright:#9DBDFF;}
+  body.light-theme.a11y-contrast{--muted:#2F3541;--border:#4B5363;--blue-bright:#0F3FA8;}
+  body.a11y-contrast .btn.ghost,body.a11y-contrast .icon-btn,body.a11y-contrast .card{border-width:2px;}
+  body.a11y-links a,body.a11y-links .linklike{text-decoration:underline;}
+  body.a11y-motion *,body.a11y-motion *::before,body.a11y-motion *::after{animation:none !important;transition:none !important;scroll-behavior:auto !important;}
+  @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none !important;transition:none !important;scroll-behavior:auto !important;}}
+  .a11y-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);}
+  .a11y-row:last-of-type{border-bottom:none;}
+  .a11y-seg{display:flex;gap:6px;}
+  .a11y-seg button[aria-pressed="true"]{background:var(--blue);color:#fff;border-color:var(--blue);}
   body.light-theme .day-card,body.light-theme .exercise-item{box-shadow:0 1px 4px rgba(0,0,0,0.06);}
   body.light-theme .video-modal-fallback,body.light-theme .modal{box-shadow:0 8px 30px rgba(0,0,0,0.12);}
   *{box-sizing:border-box;}
@@ -1736,14 +1753,44 @@ function svgLineChart(points, w, h, goal){
   </svg>`;
 }
 
+
+// רענון "רך": כשהמסך נטען מחדש אחרי פעולה, לא מציגים שלד טעינה, ושומרים מיקום גלילה ושבועות פתוחים.
+function beginSoftRender(key){
+  const main = document.querySelector('.main');
+  if(!main || main.dataset.view !== key) return { soft:false, key };
+  const open = [...main.querySelectorAll('.week-folder')].map(f => f.classList.contains('expanded'));
+  const keep = { soft:true, key, open, wy: window.scrollY, mt: main.scrollTop };
+  return keep;
+}
+function finishSoftRender(info){
+  const main = document.querySelector('.main');
+  if(!main) return;
+  const apply = () => {
+    main.dataset.view = info.key;
+    if(info.soft){
+      main.querySelectorAll('.week-folder').forEach((f,i) => {
+        if(info.open[i] !== undefined) f.classList.toggle('expanded', !!info.open[i]);
+      });
+      window.scrollTo(0, info.wy); main.scrollTop = info.mt;
+    }
+  };
+  const obs = new MutationObserver(() => { obs.disconnect(); apply(); });
+  obs.observe(main, { childList:true });
+  setTimeout(() => obs.disconnect(), 20000);
+}
+
 async function renderCoachTraineeDetail(){
   const tid = STATE.activeTraineeId;
   const app = document.getElementById('app');
-  app.innerHTML = appShell(
-    [{key:'home', label:'👥 המתאמנים שלי'}], 'home',
-    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
-  );
-  bindShellNav({ home: renderCoachHome });
+  const softInfo = beginSoftRender('coach:' + tid);
+  if(!softInfo.soft){
+    app.innerHTML = appShell(
+      [{key:'home', label:'👥 המתאמנים שלי'}], 'home',
+      `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
+    );
+    bindShellNav({ home: renderCoachHome });
+  }
+  finishSoftRender(softInfo);
 
   let trainee, progress = [], programs = [], nutritionPlans = [];
   try{
@@ -2360,6 +2407,34 @@ async function autoExtendProgramIfNeeded(program){
   return program;
 }
 
+
+// פענוח טקסט חופשי למחזור אימונים. בלוקים מופרדים בשורה ריקה. שורה ראשונה בבלוק = שם היום.
+// כל שורה אחריה = תרגיל, עם אופציונלי "4x10" / "4×10" / "4 סטים 10 חזרות" ומשקל "20 ק"ג".
+function parseQuickWeekText(text){
+  const norm = String(text||'').replace(/\r/g,'').replace(/[×xX*]/g,'x');
+  const blocks = norm.split(/\n\s*\n/).map(b => b.split('\n').map(l=>l.trim()).filter(Boolean)).filter(b=>b.length);
+  return blocks.map(lines => {
+    const title = lines[0].replace(/^[-–•\d.)\s]+/,'').trim();
+    if(/^(יום\s*)?מנוחה$/.test(title) || (lines.length===1 && /מנוחה/.test(title))) return { title:'מנוחה', is_rest_day:true };
+    const exercises = lines.slice(1).map(l => {
+      let line = l.replace(/^[-–•\d.)\s]+/,'').trim();
+      let sets=null, reps=null, weight=null;
+      let m = line.match(/(\d+)\s*x\s*(\d+(?:\s*-\s*\d+)?|[^\s]+)/);
+      if(m){ sets = parseInt(m[1]); reps = m[2].replace(/\s/g,''); line = line.replace(m[0],' '); }
+      else {
+        const ms = line.match(/(\d+)\s*סטים?/), mr = line.match(/(\d+(?:\s*-\s*\d+)?)\s*(חזרות|חז׳|חזרה)/);
+        if(ms){ sets = parseInt(ms[1]); line = line.replace(ms[0],' '); }
+        if(mr){ reps = mr[1].replace(/\s/g,''); line = line.replace(mr[0],' '); }
+      }
+      const mw = line.match(/(\d+(?:\.\d+)?)\s*(ק"ג|קג|ק״ג|kg)/i);
+      if(mw){ weight = parseFloat(mw[1]); line = line.replace(mw[0],' '); }
+      const name = line.replace(/[,:;]+/g,' ').replace(/\s+/g,' ').trim();
+      return name ? { name, sets: sets||3, reps: reps||'10', weight } : null;
+    }).filter(Boolean);
+    return { title, is_rest_day:false, exercises };
+  });
+}
+
 async function openCreateProgramModal(traineeId){
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -2374,6 +2449,7 @@ async function openCreateProgramModal(traineeId){
         <div class="templates-row">
           <div class="template-chip selected" data-tpl="">ריקה (אוסיף ימים בעצמי)</div>
           ${Object.entries(PROGRAM_TEMPLATES).map(([k,t]) => `<div class="template-chip" data-tpl="${k}">${t.label}</div>`).join('')}
+          <div class="template-chip" data-tpl="text">✍️ כתיבה מהירה</div>
           ${savedTemplates.length ? `<div class="template-chip" data-tpl="custom">🗓 תבנית שבועית מהתבניות שלי</div>` : ''}
         </div>
       </div>
@@ -2383,6 +2459,12 @@ async function openCreateProgramModal(traineeId){
       <div class="field hidden" id="fillDaysField">
         <label>כמה ימים למלא מראש מהתבנית? (אפשר להוסיף עוד ימים ידנית בהמשך)</label>
         <input id="pFillDays" type="number" value="7" min="1">
+      </div>
+      <div class="field hidden" id="textWeekField">
+        <label>כתבי את המחזור. כל יום בבלוק נפרד (שורה ריקה ביניהם). שורה ראשונה = שם היום, ואחריה תרגיל בכל שורה. אפשר לכתוב 4x10 ומשקל כמו 20 ק"ג. יום מנוחה = המילה "מנוחה".</label>
+        <textarea id="pQuickText" rows="11" placeholder="אימון A - חזה וכתפיים&#10;לחיצת חזה עם מוט 4x10&#10;לחיצת כתפיים עם משקולות 3x12 &#10;הרחקות לצדדים 3x15&#10;&#10;מנוחה&#10;&#10;אימון B - גב ורגליים&#10;מתח 3x8&#10;סקוואט עם מוט 4x10 40 ק&quot;ג"></textarea>
+        <div id="pQuickPreview" class="muted" style="font-size:12px;margin-top:6px;"></div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="pQuickSave" style="width:auto;">לשמור כל יום גם כתבנית לשימוש חוזר</label>
       </div>
       <div class="field hidden" id="customWeekField">
         <label>בניית מחזור שבועי - בחרי תבנית שמורה (או מנוחה) לכל יום</label>
@@ -2410,8 +2492,15 @@ async function openCreateProgramModal(traineeId){
       selectedTemplate = chip.getAttribute('data-tpl') || null;
       document.getElementById('fillDaysField').classList.toggle('hidden', !selectedTemplate);
       document.getElementById('customWeekField').classList.toggle('hidden', selectedTemplate !== 'custom');
+      document.getElementById('textWeekField').classList.toggle('hidden', selectedTemplate !== 'text');
     };
   });
+  document.getElementById('pQuickText').oninput = () => {
+    const w = parseQuickWeekText(document.getElementById('pQuickText').value);
+    document.getElementById('pQuickPreview').textContent = w.length
+      ? 'זוהו ' + w.length + ' ימים: ' + w.map(d => d.is_rest_day ? 'מנוחה' : (d.title + ' (' + (d.exercises||[]).length + ' תרגילים)')).join(' · ')
+      : '';
+  };
   document.getElementById('pCancel').onclick = () => bg.remove();
   document.getElementById('pSave').onclick = async () => {
     const errEl = document.getElementById('pErr');
@@ -2438,6 +2527,25 @@ async function openCreateProgramModal(traineeId){
           errEl.classList.remove('hidden');
           saveBtn.disabled = false; saveBtn.textContent = 'יצירה';
           return;
+        }
+      } else if(selectedTemplate === 'text'){
+        week = parseQuickWeekText(document.getElementById('pQuickText').value);
+        if(!week.length || week.every(d => d.is_rest_day || !(d.exercises||[]).length)){
+          errEl.textContent = 'לא זוהה אימון בטקסט. כתבי שם יום ומתחתיו תרגילים, שורה לכל תרגיל.';
+          errEl.classList.remove('hidden');
+          saveBtn.disabled = false; saveBtn.textContent = 'יצירה';
+          return;
+        }
+        if(document.getElementById('pQuickSave').checked){
+          for(const d of week.filter(x => !x.is_rest_day)){
+            try{
+              await rest('day_templates', { method:'POST', body:{
+                coach_id: PROFILE.id, name: d.title, title: d.title, description: '',
+                exercises: d.exercises.map(e => ({ name:e.name, target_sets:e.sets, target_reps:String(e.reps), target_weight_kg:e.weight }))
+              }});
+            }catch(e){}
+          }
+          await getDayTemplates(true);
         }
       } else if(selectedTemplate && PROGRAM_TEMPLATES[selectedTemplate]){
         week = PROGRAM_TEMPLATES[selectedTemplate].week;
@@ -3026,12 +3134,16 @@ function renderTraineeDayCardHtml(d, program, days, todaysDay){
 
 async function renderTraineeHome(){
   const app = document.getElementById('app');
-  app.innerHTML = appShell(
-    [{key:'home', label:'🏠 בית'}, {key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
-    'program',
-    `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
-  );
-  bindShellNav({ home: renderTraineeDashboard, program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+  const softInfo = beginSoftRender('trainee-program');
+  if(!softInfo.soft){
+    app.innerHTML = appShell(
+      [{key:'home', label:'🏠 בית'}, {key:'program', label:'📋 התוכנית שלי'}, {key:'nutrition', label:'🍽 התפריט שלי'}, {key:'progress', label:'📈 ההתקדמות שלי'}],
+      'program',
+      `<div class="skeleton skel-block"></div><div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>`
+    );
+    bindShellNav({ home: renderTraineeDashboard, program: renderTraineeHome, nutrition: renderTraineeNutrition, progress: renderTraineeProgress });
+  }
+  finishSoftRender(softInfo);
 
   let programs = [];
   try{
@@ -4014,7 +4126,179 @@ document.addEventListener('keydown', (ev) => {
   }
 });
 
+
+/* =====================================================================
+   נגישות
+   ===================================================================== */
+const A11Y_KEY = 'motion_a11y';
+function a11yLoad(){ try{ return Object.assign({text:0,contrast:false,motion:false,links:false}, JSON.parse(localStorage.getItem(A11Y_KEY)||'{}')); }catch(e){ return {text:0,contrast:false,motion:false,links:false}; } }
+function a11ySave(o){ try{ localStorage.setItem(A11Y_KEY, JSON.stringify(o)); }catch(e){} }
+function a11yApply(o){
+  const b = document.body;
+  b.classList.remove('a11y-t1','a11y-t2');
+  if(o.text === 1) b.classList.add('a11y-t1');
+  if(o.text === 2) b.classList.add('a11y-t2');
+  b.classList.toggle('a11y-contrast', !!o.contrast);
+  b.classList.toggle('a11y-motion', !!o.motion);
+  b.classList.toggle('a11y-links', !!o.links);
+}
+function openA11yModal(){
+  if(document.getElementById('a11yModal')) return;
+  const o = a11yLoad();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg'; bg.id = 'a11yModal';
+  const isLight = () => document.body.classList.contains('light-theme');
+  const draw = () => {
+    bg.innerHTML = `
+    <div class="modal">
+      <h2 id="a11yTitle" style="margin:0 0 6px 0;">♿ נגישות והתאמות תצוגה</h2>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 10px 0;">ההגדרות נשמרות במכשיר הזה.</p>
+      <div class="a11y-row"><span>גודל טקסט</span>
+        <div class="a11y-seg">
+          <button class="btn ghost small" data-a="text" data-v="0" aria-pressed="${o.text===0}">רגיל</button>
+          <button class="btn ghost small" data-a="text" data-v="1" aria-pressed="${o.text===1}">גדול</button>
+          <button class="btn ghost small" data-a="text" data-v="2" aria-pressed="${o.text===2}">גדול מאוד</button>
+        </div></div>
+      <div class="a11y-row"><span>ניגודיות גבוהה</span><button class="btn ghost small" data-a="contrast" aria-pressed="${o.contrast}">${o.contrast?'פועל':'כבוי'}</button></div>
+      <div class="a11y-row"><span>הפחתת אנימציות</span><button class="btn ghost small" data-a="motion" aria-pressed="${o.motion}">${o.motion?'פועל':'כבוי'}</button></div>
+      <div class="a11y-row"><span>קו תחתון לקישורים</span><button class="btn ghost small" data-a="links" aria-pressed="${o.links}">${o.links?'פועל':'כבוי'}</button></div>
+      <div class="a11y-row"><span>מצב תצוגה</span><button class="btn ghost small" data-a="theme">${isLight()?'🌙 מעבר למצב כהה':'☀️ מעבר למצב בהיר'}</button></div>
+      <div class="a11y-row"><span><button class="linklike" data-a="reset">איפוס כל ההתאמות</button></span></div>
+      <p style="color:var(--muted);font-size:12px;line-height:1.6;margin:10px 0 0 0;">האפליקציה תומכת בניווט במקלדת (Tab, Enter, Esc) ובקורא מסך. נתקלת בבעיית נגישות? ספרי למאמן/ית ונטפל בזה.</p>
+      <div class="actions" style="margin-top:14px;"><button class="btn full" data-a="close">סגירה</button></div>
+    </div>`;
+    bg.querySelector('.modal').setAttribute('aria-labelledby','a11yTitle');
+    bg.querySelectorAll('[data-a]').forEach(btn => {
+      btn.onclick = () => {
+        const a = btn.getAttribute('data-a');
+        if(a === 'close'){ bg.remove(); return; }
+        if(a === 'text') o.text = parseInt(btn.getAttribute('data-v'));
+        else if(a === 'reset'){ o.text=0; o.contrast=false; o.motion=false; o.links=false; }
+        else if(a === 'theme'){
+          document.body.classList.toggle('light-theme');
+          try{ localStorage.setItem('motion_theme', isLight() ? 'light' : 'dark'); }catch(e){}
+        } else o[a] = !o[a];
+        a11ySave(o); a11yApply(o); draw();
+        const again = bg.querySelector('[data-a="'+a+'"]'+(a==='text'?'[data-v="'+o.text+'"]':'')) || bg.querySelector('[data-a="close"]');
+        if(again) again.focus();
+      };
+    });
+  };
+  bg.onclick = (ev) => { if(ev.target === bg) bg.remove(); };
+  document.body.appendChild(bg);
+  draw();
+  const first = bg.querySelector('[data-a]'); if(first) first.focus();
+}
+
+(function a11yLayer(){
+  let queued = false;
+  function enhance(){
+    queued = false;
+    // ניווט ואזורים
+    document.querySelectorAll('.sidebar,.bottom-nav').forEach(n => { if(!n.getAttribute('role')){ n.setAttribute('role','navigation'); n.setAttribute('aria-label','תפריט ראשי'); } });
+    document.querySelectorAll('.main').forEach(n => { if(!n.getAttribute('role')) n.setAttribute('role','main'); });
+    // אלמנטים לחיצים שאינם כפתורים
+    document.querySelectorAll('.nav-item,[data-open-day],[data-week-toggle],[data-week-toggle-coach],.theme-toggle-item').forEach(el => {
+      if(!el.getAttribute('role')) el.setAttribute('role','button');
+      if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+      if(el.classList.contains('nav-item') && el.classList.contains('active')) el.setAttribute('aria-current','page');
+    });
+    document.querySelectorAll('.week-folder [data-week-toggle],.week-folder [data-week-toggle-coach]').forEach(el => {
+      const f = el.closest('.week-folder');
+      el.setAttribute('aria-expanded', f && f.classList.contains('expanded') ? 'true' : 'false');
+    });
+    // כפתורי אייקון בלי שם
+    document.querySelectorAll('button.icon-btn,button.fab,.fab').forEach(el => {
+      if(!el.getAttribute('aria-label')){
+        const t = el.getAttribute('title') || '';
+        if(t) el.setAttribute('aria-label', t);
+      }
+    });
+    // תמונות
+    document.querySelectorAll('img:not([alt])').forEach(img => {
+      img.setAttribute('alt', img.classList.contains('photo-thumb') ? 'תמונת התקדמות' : '');
+    });
+    // חלונות
+    document.querySelectorAll('.modal-bg > .modal, .video-modal-bg').forEach(m => {
+      if(!m.getAttribute('role')){
+        m.setAttribute('role','dialog'); m.setAttribute('aria-modal','true');
+        const h = m.querySelector('h1,h2,h3');
+        if(h){ if(!h.id) h.id = 'dlg' + Math.random().toString(36).slice(2,8); m.setAttribute('aria-labelledby', h.id); }
+        else m.setAttribute('aria-label','חלון');
+        const target = m.querySelector('input,select,textarea,button,[tabindex="0"]');
+        if(target && !m.contains(document.activeElement)) setTimeout(() => { try{ target.focus({preventScroll:true}); }catch(e){} }, 30);
+      }
+    });
+    // הודעות קופצות
+    document.querySelectorAll('.toast:not([role])').forEach(t => { t.setAttribute('role','status'); t.setAttribute('aria-live','polite'); });
+    // שדות בלי תווית
+    document.querySelectorAll('.field').forEach(f => {
+      const lab = f.querySelector('label'); const inp = f.querySelector('input,select,textarea');
+      if(lab && inp && !inp.id && !inp.getAttribute('aria-label') && !lab.getAttribute('for')){
+        const id = 'f' + Math.random().toString(36).slice(2,9);
+        inp.id = id; lab.setAttribute('for', id);
+      }
+    });
+    document.querySelectorAll('input:not([aria-label]):not([id]),select:not([aria-label]):not([id]),textarea:not([aria-label]):not([id])').forEach(inp => {
+      const ph = inp.getAttribute('placeholder') || inp.getAttribute('title');
+      if(ph) inp.setAttribute('aria-label', ph);
+    });
+    // פריט נגישות בתפריט
+    document.querySelectorAll('.sidebar').forEach(sb => {
+      if(!sb.querySelector('.a11y-open')){
+        const ref = sb.querySelector('.theme-toggle-item');
+        const it = document.createElement('div');
+        it.className = 'nav-item a11y-open'; it.style.marginBottom = '4px';
+        it.textContent = '♿ נגישות';
+        if(ref) ref.parentNode.insertBefore(it, ref); else sb.appendChild(it);
+      }
+    });
+    document.querySelectorAll('.bottom-nav').forEach(bn => {
+      if(!bn.querySelector('.a11y-open')){
+        const th = bn.querySelector('.theme-toggle-item');
+        const it = document.createElement('div');
+        it.className = 'nav-item a11y-open';
+        it.textContent = '♿ נגישות';
+        if(th) th.replaceWith(it); else bn.appendChild(it);
+      }
+    });
+  }
+  const schedule = () => { if(!queued){ queued = true; requestAnimationFrame(enhance); } };
+  new MutationObserver(schedule).observe(document.body, { childList:true, subtree:true });
+  schedule();
+
+  document.addEventListener('click', (ev) => {
+    const t = ev.target.closest && ev.target.closest('.a11y-open');
+    if(t){ ev.preventDefault(); openA11yModal(); }
+  });
+  document.addEventListener('keydown', (ev) => {
+    const el = ev.target;
+    // Enter / רווח על אלמנט שאינו כפתור אמיתי
+    if((ev.key === 'Enter' || ev.key === ' ') && el && el.getAttribute && el.getAttribute('role') === 'button' && !/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(el.tagName)){
+      ev.preventDefault(); el.click(); return;
+    }
+    // Escape סוגר חלון עליון
+    if(ev.key === 'Escape'){
+      const layers = document.querySelectorAll('.modal-bg,.video-modal-bg');
+      if(layers.length){ layers[layers.length-1].remove(); return; }
+    }
+    // לכידת Tab בתוך חלון
+    if(ev.key === 'Tab'){
+      const layers = document.querySelectorAll('.modal-bg');
+      if(!layers.length) return;
+      const top = layers[layers.length-1];
+      const f = [...top.querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]')].filter(x => !x.disabled && x.offsetParent !== null);
+      if(!f.length) return;
+      const first = f[0], last = f[f.length-1];
+      if(!top.contains(document.activeElement)){ ev.preventDefault(); first.focus(); }
+      else if(ev.shiftKey && document.activeElement === first){ ev.preventDefault(); last.focus(); }
+      else if(!ev.shiftKey && document.activeElement === last){ ev.preventDefault(); first.focus(); }
+    }
+  });
+})();
+
 (async function boot(){
+  try{ a11yApply(a11yLoad()); }catch(e){}
   try{ if(localStorage.getItem('motion_theme') === 'light') document.body.classList.add('light-theme'); }catch(e){}
   document.getElementById('app').innerHTML = `<div class="centerscreen">${motionMark(38,true)}</div>`;
   const sessRaw = (function(){ try{ return localStorage.getItem('motion_session'); }catch(e){ return null; } })();
