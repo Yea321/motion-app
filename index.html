@@ -2975,7 +2975,8 @@ function parseMenuText(text){
     }
     if(/^(מחליפים|הערה|שימו לב|שימי לב)/.test(l)){ notes.push(l); continue; }
     if(!cur){ cur = { name:'ארוחת בוקר', calories:null, options:[] }; meals.push(cur); }
-    if(cur.options.length < 5) cur.options.push(l); else notes.push(cur.name + ': ' + l);
+    const opt = l.replace(/^[•\-–\s]+/,'');
+    if(cur.options.length < 5) cur.options.push(opt); else notes.push(cur.name + ': ' + opt);
   }
   return { meals, notes };
 }
@@ -3852,7 +3853,7 @@ async function renderTraineeNutrition(){
               const c = mealChecks[m.id];
               const opts = Array.isArray(m.options) ? m.options : [];
               if(!c) return `${opts.length ? `<div style="margin-top:10px;font-size:12px;color:var(--muted);">בחרי את הארוחה שאכלת:</div>
-                <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">${opts.map((o,i) => `<button class="btn ghost" data-meal-opt="${m.id}" data-i="${i}" style="text-align:right;white-space:normal;font-weight:600;">${String(o).replace(/</g,'&lt;')}</button>`).join('')}</div>` : ''}
+                <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">${opts.map((o,i) => `<button class="btn ghost" data-meal-opt="${m.id}" data-i="${i}" style="text-align:right;white-space:normal;font-weight:500;font-size:13px;line-height:1.4;padding:7px 10px;min-height:0;">${String(o).replace(/^[•\-–\s]+/,'').replace(/</g,'&lt;')}</button>`).join('')}</div>` : ''}
                 <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
                 ${opts.length ? '' : `<button class="btn small" data-meal-ate="${m.id}">✓ אכלתי</button>`}
                 <button class="btn ghost small" data-meal-other="${m.id}">✎ אכלתי משהו אחר</button></div>`;
