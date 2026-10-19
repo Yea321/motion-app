@@ -1864,8 +1864,10 @@ async function renderCoachTraineeDetail(){
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <h3 style="margin:0;">תפריט תזונה</h3>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${!nutritionPlan ? `<button class="btn small" id="createNutritionBtn">+ יצירת תפריט</button>` : `
+          ${!nutritionPlan ? `<button class="btn small" id="createNutritionBtn">+ יצירת תפריט</button>
+            <button class="btn ghost small" id="pasteMenuBtn">📋 הדבקת תפריט</button>` : `
             <button class="btn small" id="addMealBtn">+ הוספת ארוחה</button>
+            <button class="btn ghost small" id="pasteMenuBtn">📋 הדבקת תפריט</button>
             <button class="btn ghost small" id="editPlanBtn">✎ עריכת יעדים</button>
             <button class="icon-btn" id="deletePlanBtn" title="מחיקת התפריט כולו">🗑</button>
           `}
@@ -2029,7 +2031,9 @@ async function renderCoachTraineeDetail(){
   }
   if(!nutritionPlan){
     document.getElementById('createNutritionBtn').onclick = () => openCreateNutritionModal(tid);
+    document.getElementById('pasteMenuBtn').onclick = () => openPasteMenuModal(tid, null);
   } else {
+    document.getElementById('pasteMenuBtn').onclick = () => openPasteMenuModal(tid, nutritionPlan);
     document.getElementById('addMealBtn').onclick = () => openAddMealModal(nutritionPlan.id);
     document.getElementById('editPlanBtn').onclick = () => openCreateNutritionModal(tid, nutritionPlan);
     document.getElementById('deletePlanBtn').onclick = () => {
@@ -2946,6 +2950,123 @@ function openCreateNutritionModal(traineeId, existingPlan){
       renderCoachTraineeDetail();
     }catch(e){
       errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  };
+}
+
+
+// פענוח תפריט מודבק: כותרת ארוחה (בוקר/צהריים/אחה"צ/ערב), שורת קלוריות (~685 קל'), ואחריהן אפשרויות בשורה לכל אחת.
+function parseMenuText(text){
+  const lines = String(text||'').replace(/\r/g,'').split('\n').map(l => l.replace(/\t+/g,' ').trim()).filter(Boolean);
+  const calRe = /^~?\s*(\d{2,4})\s*(קל|קק)/;
+  const knownHead = /^(ארוחת\s+)?(בוקר|צהריים|צהרים|אחה"צ|אחה״צ|אחה''צ|אחר הצהריים|ערב|ביניים|לילה|לפני אימון|אחרי אימון)\s*:?$/;
+  const meals = []; const notes = [];
+  let cur = null;
+  const norm = n => { n = n.replace(/:$/,'').trim(); return /^ארוחת\s/.test(n) ? n : 'ארוחת ' + n; };
+  for(let i=0;i<lines.length;i++){
+    const l = lines[i];
+    const cm = l.match(calRe);
+    if(cm){ if(cur && !cur.calories) cur.calories = parseInt(cm[1]); continue; }
+    if(knownHead.test(l)){
+      cur = { name: norm(l), calories: null, options: [] };
+      meals.push(cur);
+      continue;
+    }
+    if(/^(מחליפים|הערה|שימו לב|שימי לב)/.test(l)){ notes.push(l); continue; }
+    if(!cur){ cur = { name:'ארוחת בוקר', calories:null, options:[] }; meals.push(cur); }
+    if(cur.options.length < 5) cur.options.push(l); else notes.push(cur.name + ': ' + l);
+  }
+  return { meals, notes };
+}
+
+
+function mealKey(n){
+  return String(n||'').replace(/^ארוחת\s+/,'').replace(/["'״׳]/g,'').replace(/\s+/g,' ').trim();
+}
+function findMealMatch(existingMeals, name){
+  const k = mealKey(name);
+  const list = existingMeals || [];
+  return list.find(m => mealKey(m.name) === k) || list.find(m => { const e = mealKey(m.name); return e && k && (e.includes(k) || k.includes(e)); }) || null;
+}
+
+function openPasteMenuModal(traineeId, plan){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>הדבקת תפריט מלא</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 10px 0;">${plan ? 'אם כבר יש ארוחה באותו שם (למשל "ארוחת צהריים"), האפשרויות ייכנסו אליה. ארוחה שלא קיימת תיווצר. ' : ''}הדביקי את התפריט כמו שהוא: כותרת לכל ארוחה (בוקר, צהריים, אחה"צ, ערב), שורת קלוריות כמו ‎~685 קל'‎, ואחריה אפשרות בכל שורה (עד 5). שורה ראשונה בלי כותרת נחשבת ארוחת בוקר.</p>
+      <div class="field"><textarea id="pmText" rows="12" placeholder="צהריים&#10;~685 קל'&#10;200 ג' פרגית בתנור, 2 תפוחי אדמה אפויים וסלט&#10;..."></textarea></div>
+      <div id="pmPreview" class="muted" style="font-size:12px;line-height:1.7;margin-bottom:8px;"></div>
+      <div id="pmErr" class="error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="pmCancel">ביטול</button>
+        <button class="btn full" id="pmSave">${plan ? 'עדכון התפריט' : 'יצירת הארוחות'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  const ta = document.getElementById('pmText');
+  ta.oninput = () => {
+    const r = parseMenuText(ta.value);
+    document.getElementById('pmPreview').innerHTML = r.meals.length
+      ? 'זוהו ' + r.meals.length + ' ארוחות: ' + r.meals.map(m => {
+          const hit = plan ? findMealMatch(plan.meals, m.name) : null;
+          return '<b>' + m.name.replace(/</g,'&lt;') + '</b> (' + m.options.length + ' אפשרויות' + (m.calories ? ', ' + m.calories + ' קק"ל' : '') + ')' + (plan ? (hit ? ' ← תיכנס ל"' + String(hit.name).replace(/</g,'&lt;') + '"' : ' ← ארוחה חדשה') : '');
+        }).join('<br>') + (r.notes.length ? '<br>' + r.notes.length + ' הערות יישמרו בהערות הכלליות.' : '')
+      : '';
+  };
+  document.getElementById('pmCancel').onclick = () => bg.remove();
+  document.getElementById('pmSave').onclick = async () => {
+    const errEl = document.getElementById('pmErr');
+    const saveBtn = document.getElementById('pmSave');
+    const r = parseMenuText(ta.value);
+    if(!r.meals.length || r.meals.every(m => !m.options.length)){
+      errEl.textContent = 'לא זוהו ארוחות. הדביקי כותרת ארוחה ומתחתיה את האפשרויות.';
+      errEl.classList.remove('hidden'); return;
+    }
+    saveBtn.disabled = true; saveBtn.textContent = 'יוצרת...';
+    try{
+      let planId = plan && plan.id;
+      let startIndex = 0;
+      const notesText = r.notes.join('\n');
+      if(!planId){
+        const total = r.meals.reduce((a,m) => a + (m.calories || 0), 0);
+        const created = await rest('nutrition_plans', { method:'POST', body:{
+          trainee_id: traineeId, coach_id: PROFILE.id, title:'תפריט תזונה',
+          daily_calories: total || null, general_notes: notesText || null
+        }, prefer:'return=representation' });
+        planId = created && created[0] && created[0].id;
+        if(!planId) throw new Error('יצירת התפריט נכשלה.');
+      } else {
+        const existing = await rest('meals', { query:`?plan_id=eq.${planId}&select=order_index` }) || [];
+        startIndex = existing.length ? Math.max(...existing.map(m => m.order_index||0)) + 1 : 0;
+        if(notesText){
+          const merged = ((plan.general_notes ? plan.general_notes + '\n' : '') + notesText);
+          await rest('nutrition_plans', { method:'PATCH', query:`?id=eq.${planId}`, body:{ general_notes: merged } });
+        }
+      }
+      const toCreate = [];
+      for(const m of r.meals){
+        const hit = plan ? findMealMatch(plan.meals, m.name) : null;
+        if(hit){
+          const body = { options: m.options };
+          if(m.calories && !hit.calories) body.calories = m.calories;
+          await rest('meals', { method:'PATCH', query:`?id=eq.${hit.id}`, body });
+        } else toCreate.push(m);
+      }
+      if(toCreate.length){
+        await rest('meals', { method:'POST', body: toCreate.map((m,i) => ({
+          plan_id: planId, order_index: startIndex + i, name: m.name,
+          calories: m.calories, description: '', options: m.options
+        })) });
+      }
+      bg.remove();
+      showToast('התפריט עודכן');
+      renderCoachTraineeDetail();
+    }catch(e){
+      saveBtn.disabled = false; saveBtn.textContent = plan ? 'עדכון התפריט' : 'יצירת הארוחות';
+      errEl.textContent = e.message + ' (אם כתוב שחסרה עמודה, צריך להריץ את v29 ב-SQL)';
       errEl.classList.remove('hidden');
     }
   };
