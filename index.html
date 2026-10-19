@@ -3221,10 +3221,7 @@ async function renderTraineeDashboard(){
 
     ${!program ? `<div class="panel" style="margin-bottom:16px;"><div class="empty">${logoSVG(46)}<div>המאמן/ת שלך עדיין לא בנה/תה עבורך תוכנית</div></div></div>` : ''}
 
-    <div class="grid cols-2">
-      <button class="btn ghost full" id="dashLogBtn" style="padding:14px;">📏 רישום מדידה</button>
-      <button class="btn ghost full" id="dashNutritionBtn" style="padding:14px;">🍽 התפריט שלי</button>
-    </div>
+    <button class="btn ghost full" id="dashLogBtn" style="padding:14px;">📏 רישום מדידה</button>
   `;
 
   const goalSaveBtn = document.getElementById('saveGoalStatementBtn');
