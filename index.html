@@ -41,6 +41,7 @@
     --green:#1E9E63;
     --red:#D5393E;
   }
+  .btn.picked{background:var(--blue);color:#fff;border-color:var(--blue);}
   /* ---------- נגישות ---------- */
   :focus-visible{outline:3px solid var(--blue-bright);outline-offset:2px;border-radius:4px;}
   .field input:focus-visible,.field select:focus-visible,.field textarea:focus-visible{outline:3px solid var(--blue-bright);outline-offset:1px;}
@@ -2965,7 +2966,7 @@ function openAddMealModal(planId, existingMeal){
         <div class="field"><label>שומן בגרם (אופציונלי)</label><input id="mFat" type="number" value="${m.fat_g ?? ''}"></div>
       </div>
       <div class="field"><label>פירוט (מזון וכמויות)</label><textarea id="mDesc" rows="4" placeholder="לדוגמה: 3 ביצים, פרוסת לחם מלא, אבוקדו...">${m.description || ''}</textarea></div>
-      <div class="field"><label>אפשרויות להחלפה (אופציונלי): אפשרות בכל שורה. המתאמן יוכל ללחוץ על מה שאכל</label><textarea id="mOpts" rows="4" placeholder="חזה עוף 150 גרם&#10;טונה בשמן זית + ביצה קשה&#10;גבינה לבנה 5% עם ירקות">${(Array.isArray(m.options)?m.options:[]).join('\n').replace(/</g,'&lt;')}</textarea></div>
+      <div class="field"><label>אפשרויות לארוחה (אופציונלי, עד 5): כל שורה היא ארוחה שלמה. המתאמן יבחר אחת מהן</label><textarea id="mOpts" rows="4" placeholder="חביתה מ-3 ביצים + 2 פרוסות לחם מלא + סלט&#10;יוגורט 5% + גרנולה + פרי&#10;טוסט עם גבינה לבנה וטונה + ירקות">${(Array.isArray(m.options)?m.options:[]).join('\n').replace(/</g,'&lt;')}</textarea></div>
       <div id="mErr" class="error hidden"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="mCancel">ביטול</button>
@@ -2983,6 +2984,7 @@ function openAddMealModal(planId, existingMeal){
       // שולחים את האפשרויות רק אם יש (או היו) כאלה, כדי שהכול ימשיך לעבוד גם לפני הרצת ה-SQL
       const optsPart = () => {
         const list = document.getElementById('mOpts').value.split('\n').map(x=>x.trim()).filter(Boolean);
+        if(list.length > 5) throw new Error('יש ' + list.length + ' אפשרויות. המקסימום הוא 5 לכל ארוחה.');
         const had = Array.isArray(m.options) && m.options.length;
         return (list.length || had) ? { options: list } : {};
       };
@@ -3572,6 +3574,23 @@ async function renderTraineeHome(){
 }
 
 
+// אפשרויות ארוחה: שורה "קבוצה: אפשרות" (למשל "חלבון: חזה עוף") מקובצת, שורה בלי נקודתיים נכנסת לקבוצה כללית.
+function groupMealOptions(options){
+  const groups = [];
+  (Array.isArray(options) ? options : []).forEach(raw => {
+    const t = String(raw).trim(); if(!t) return;
+    const k = t.indexOf(':');
+    const g = k > 0 && k < 25 ? t.slice(0,k).trim() : '';
+    const o = k > 0 && k < 25 ? t.slice(k+1).trim() : t;
+    if(!o) return;
+    let grp = groups.find(x => x.name === g);
+    if(!grp){ grp = { name:g, items:[] }; groups.push(grp); }
+    grp.items.push(o);
+  });
+  return groups;
+}
+const MEAL_PICKS = {};
+
 function localDateStr(d){
   d = d || new Date();
   const p = n => String(n).padStart(2,'0');
@@ -3711,10 +3730,10 @@ async function renderTraineeNutrition(){
             ${(() => {
               const c = mealChecks[m.id];
               const opts = Array.isArray(m.options) ? m.options : [];
-              if(!c) return `${opts.length ? `<div style="margin-top:10px;font-size:12px;color:var(--muted);">אפשרויות, לחצי על מה שאכלת:</div>
-                <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">${opts.map((o,i) => `<button class="btn ghost small" data-meal-opt="${m.id}" data-i="${i}" style="text-align:right;white-space:normal;">${String(o).replace(/</g,'&lt;')}</button>`).join('')}</div>` : ''}
-                <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-                <button class="btn small" data-meal-ate="${m.id}">✓ ${opts.length ? 'אכלתי לפי התפריט' : 'אכלתי'}</button>
+              if(!c) return `${opts.length ? `<div style="margin-top:10px;font-size:12px;color:var(--muted);">בחרי את הארוחה שאכלת:</div>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">${opts.map((o,i) => `<button class="btn ghost" data-meal-opt="${m.id}" data-i="${i}" style="text-align:right;white-space:normal;font-weight:600;">${String(o).replace(/</g,'&lt;')}</button>`).join('')}</div>` : ''}
+                <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                ${opts.length ? '' : `<button class="btn small" data-meal-ate="${m.id}">✓ אכלתי</button>`}
                 <button class="btn ghost small" data-meal-other="${m.id}">✎ אכלתי משהו אחר</button></div>`;
               if(c.status === 'ate') return `<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;">
                 <span class="badge" style="background:rgba(51,196,129,0.15);color:var(--green);">✓ אכלתי${c.note ? ': ' + String(c.note).replace(/</g,'&lt;') : ''}</span>
