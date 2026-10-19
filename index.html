@@ -1804,7 +1804,7 @@ async function renderCoachTraineeDetail(){
   try{ nutritionLogs = await rest('nutrition_logs', { query:`?trainee_id=eq.${tid}&select=*&order=log_date.desc&limit=10` }) || []; }catch(e){}
   let mealChecksCoach = [];
   try{
-    const since = new Date(); since.setDate(since.getDate()-6);
+    const since = new Date(); since.setDate(since.getDate()-13);
     mealChecksCoach = await rest('meal_checks', { query:`?trainee_id=eq.${tid}&log_date=gte.${localDateStr(since)}&select=*,meals(name)&order=log_date.desc` }) || [];
   }catch(e){}
 
@@ -1894,16 +1894,50 @@ async function renderCoachTraineeDetail(){
       </div>
     </div>
 
-    ${mealChecksCoach.length ? `
-    <div class="panel" style="margin-bottom:16px;">
-      <h3>סימוני ארוחות (7 ימים אחרונים)</h3>
-      ${mealChecksCoach.map(c => `
-        <div class="day-row" style="cursor:default;">
-          <div class="day-num" style="min-width:60px;font-size:11px;">${new Date(c.log_date).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})}</div>
-          <div class="day-info"><div class="t">${(c.meals && c.meals.name) || 'ארוחה'}</div>${c.note ? `<div class="d">${String(c.note).replace(/</g,'&lt;')}</div>` : ''}</div>
-          ${c.status==='ate' ? `<span class="badge" style="background:rgba(51,196,129,0.15);color:var(--green);">✓ אכל/ה</span>` : `<span class="badge" style="background:rgba(240,180,41,0.15);color:#E0A82E;">✎ משהו אחר</span>`}
-        </div>`).join('')}
-    </div>` : ''}
+    ${mealChecksCoach.length && mealsList.length ? (() => {
+      const dn = ['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'];
+      const now = new Date(); now.setHours(0,0,0,0);
+      const sun = new Date(now); sun.setDate(now.getDate() - now.getDay());
+      const map = {};
+      mealChecksCoach.forEach(c => { map[c.meal_id + '|' + c.log_date] = c; });
+      const esc = t => String(t||'').replace(/</g,'&lt;');
+      const weekHtml = (offset) => {
+        const start = new Date(sun); start.setDate(sun.getDate() + offset*7);
+        const days = Array.from({length:7}, (_,k) => { const d = new Date(start); d.setDate(start.getDate()+k); return d; });
+        const notes = [];
+        const rows = mealsList.map(m => `
+          <tr><td style="padding:8px 6px;font-size:13px;white-space:nowrap;">${esc(m.name)}</td>
+          ${days.map(d => {
+            const c = map[m.id + '|' + localDateStr(d)];
+            const future = d > now;
+            if(!c) return `<td style="text-align:center;color:var(--muted);${future?'opacity:.35;':''}">·</td>`;
+            if(c.note) notes.push(`${dn[d.getDay()]} · ${esc(m.name)}: ${esc(c.note)}`);
+            return c.status === 'ate'
+              ? `<td style="text-align:center;color:var(--green);font-weight:800;">✓</td>`
+              : `<td style="text-align:center;color:#E0A82E;font-weight:800;">✎</td>`;
+          }).join('')}</tr>`).join('');
+        const ate = Object.values(map).filter(c => days.some(d => localDateStr(d) === c.log_date)).length;
+        return `
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${days[0].toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})} - ${days[6].toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})} · ${ate} ארוחות סומנו</div>
+          <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+            <thead><tr><th></th>${days.map(d => `<th style="font-size:12px;color:var(--muted);padding:4px;${localDateStr(d)===localDateStr(now)?'color:var(--blue-bright);':''}">${dn[d.getDay()]}</th>`).join('')}</tr></thead>
+            <tbody>${rows}</tbody></table></div>
+          ${notes.length ? `<div style="margin-top:10px;font-size:13px;line-height:1.7;">${notes.map(n => `<div>• ${n}</div>`).join('')}</div>` : ''}
+          <div class="muted" style="font-size:11px;margin-top:8px;">✓ אכל/ה · ✎ אכל/ה משהו אחר או בחר/ה אפשרות · · לא סומן</div>`;
+      };
+      return `
+    <div class="panel" style="margin-bottom:16px;" id="mealWeekPanel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <h3 style="margin:0;">מעקב ארוחות שבועי</h3>
+        <div style="display:flex;gap:6px;">
+          <button class="btn small" data-mw="0">השבוע</button>
+          <button class="btn ghost small" data-mw="-1">שבוע שעבר</button>
+        </div>
+      </div>
+      <div data-mw-body="0">${weekHtml(0)}</div>
+      <div data-mw-body="-1" class="hidden">${weekHtml(-1)}</div>
+    </div>`;
+    })() : ''}
 
     ${nutritionLogs.length ? `
     <div class="panel" style="margin-bottom:16px;">
@@ -2064,6 +2098,13 @@ async function renderCoachTraineeDetail(){
       const dayId = row.getAttribute('data-open-day');
       const day = (program.program_days || []).find(d => d.id === dayId);
       if(day && !day.is_rest_day) openManageExercisesModal(day);
+    };
+  });
+  document.querySelectorAll('[data-mw]').forEach(b => {
+    b.onclick = () => {
+      const v = b.getAttribute('data-mw');
+      document.querySelectorAll('[data-mw-body]').forEach(x => x.classList.toggle('hidden', x.getAttribute('data-mw-body') !== v));
+      document.querySelectorAll('[data-mw]').forEach(x => x.classList.toggle('ghost', x.getAttribute('data-mw') !== v));
     };
   });
   const exportBtn = document.getElementById('exportCoachBtn');
